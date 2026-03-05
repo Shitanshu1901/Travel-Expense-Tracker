@@ -151,7 +151,7 @@ export default function App() {
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
           <Text style={styles.modalTitle}>{modalMode === 'add' ? 'New Trip' : 'Rename Trip'}</Text>
-          <TextInput style={styles.modalInput} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name..." />
+          <TextInput style={[styles.modalInput, { color: '#000000' }]} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name..." placeholderTextColor="#94a3b8" />
           <View style={styles.row}>
             <TouchableOpacity style={[styles.modalBtn, {backgroundColor: '#ccc'}]} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
             <TouchableOpacity style={styles.modalBtn} onPress={handleTripSubmit}><Text style={{color:'white'}}>Save</Text></TouchableOpacity>
@@ -165,7 +165,7 @@ export default function App() {
           <Text style={styles.authorTag}>Made by Shitanshu Chokshi</Text>
           <View style={[styles.row, {marginTop: 15}]}>
             <View style={styles.tripPicker}>
-              <Picker selectedValue={activeTrip} onValueChange={(t) => { setActiveTrip(t); saveData(trips, t, masterCurrency); }}>
+              <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={activeTrip} onValueChange={(t) => { setActiveTrip(t); saveData(trips, t, masterCurrency); }}>
                 {Object.keys(trips).length > 0 ? Object.keys(trips).map(t => <Picker.Item key={t} label={t} value={t} />) : <Picker.Item label="My First Trip" value="My First Trip" />}
               </Picker>
             </View>
@@ -174,7 +174,11 @@ export default function App() {
           </View>
           <View style={styles.homeCurrencyRow}>
             <Text style={styles.subText}>Home Currency: </Text>
-            <View style={styles.currencyPickerWrapper}><Picker selectedValue={masterCurrency} onValueChange={(m) => { setMasterCurrency(m); saveData(trips, activeTrip, m); }}>{CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}</Picker></View>
+            <View style={styles.currencyPickerWrapper}>
+              <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={masterCurrency} onValueChange={(m) => { setMasterCurrency(m); saveData(trips, activeTrip, m); }}>
+                {CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
+              </Picker>
+            </View>
           </View>
         </View>
 
@@ -187,19 +191,39 @@ export default function App() {
         </View>
 
         <View style={styles.inputCard}>
-          <TextInput style={styles.input} placeholder="YYYY-MM-DD" placeholderTextColor="#94a3b8" value={date} onChangeText={setDate} />
+          <TextInput style={[styles.input, { color: '#000000' }]} placeholder="YYYY-MM-DD" placeholderTextColor="#94a3b8" value={date} onChangeText={setDate} />
           <View style={styles.row}>
-            <View style={styles.halfPicker}><Picker selectedValue={country} onValueChange={(v) => { setCountry(v); setCity(LOCATION_DATA[v][0]); }}>{Object.keys(LOCATION_DATA).map(k => <Picker.Item key={k} label={k} value={k} />)}</Picker></View>
-            <View style={styles.halfPicker}><Picker selectedValue={city} onValueChange={setCity}>{LOCATION_DATA[country]?.map(c => <Picker.Item key={c} label={c} value={c} />)}</Picker></View>
+            <View style={styles.halfPicker}>
+              <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={country} onValueChange={(v) => { setCountry(v); setCity(LOCATION_DATA[v][0]); }}>
+                {Object.keys(LOCATION_DATA).map(k => <Picker.Item key={k} label={k} value={k} />)}
+              </Picker>
+            </View>
+            <View style={styles.halfPicker}>
+              <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={city} onValueChange={setCity}>
+                {LOCATION_DATA[country]?.map(c => <Picker.Item key={c} label={c} value={c} />)}
+              </Picker>
+            </View>
           </View>
-          <TextInput style={styles.input} placeholder="Description" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
+          <TextInput style={[styles.input, { color: '#000000' }]} placeholder="Description" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
           <View style={styles.row}>
-            <View style={styles.halfPicker}><Picker selectedValue={category} onValueChange={setCategory}>{CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}</Picker></View>
-            <TextInput style={[styles.input, {flex: 1.2, marginBottom: 0}]} placeholder="Amount" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
+            <View style={styles.halfPicker}>
+              <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={category} onValueChange={setCategory}>
+                {CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}
+              </Picker>
+            </View>
+            <TextInput style={[styles.input, {flex: 1.2, marginBottom: 0, color: '#000000'}]} placeholder="Amount" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
           </View>
           <View style={styles.row}>
-            <View style={styles.halfPicker}><Picker selectedValue={currency1} onValueChange={setCurrency1}>{CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}</Picker></View>
-            <View style={styles.halfPicker}><Picker selectedValue={paymentMethod} onValueChange={setPaymentMethod}>{PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}</Picker></View>
+            <View style={styles.halfPicker}>
+              <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={currency1} onValueChange={setCurrency1}>
+                {CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
+              </Picker>
+            </View>
+            <View style={styles.halfPicker}>
+              <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={paymentMethod} onValueChange={setPaymentMethod}>
+                {PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}
+              </Picker>
+            </View>
           </View>
           <TouchableOpacity style={styles.submitBtn} onPress={handleAddExpense}><Text style={styles.btnText}>+ ADD EXPENSE</Text></TouchableOpacity>
         </View>
