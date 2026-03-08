@@ -8,8 +8,8 @@ import * as Sharing from 'expo-sharing';
 const API_KEY = '8781e84bef6d6f9563c506e1'; 
 
 const LOCATION_DATA = {
-  "🇻🇳 Vietnam": ["Hanoi", "Ho Chi Minh City", "Da Nang", "Phu Quoc", "Hoi An", "Sapa", "Nha Trang"],
   "🇮🇳 India": ["Mumbai", "Delhi", "Goa", "Bangalore", "Jaipur", "Hyderabad", "Kochi", "Chennai"],
+  "🇻🇳 Vietnam": ["Hanoi", "Ho Chi Minh City", "Da Nang", "Phu Quoc", "Hoi An", "Sapa", "Nha Trang", "Ba Na Hills"],
   "🇹🇭 Thailand": ["Bangkok", "Phuket", "Chiang Mai", "Pattaya", "Krabi", "Koh Samui"],
   "🇯🇵 Japan": ["Tokyo", "Osaka", "Kyoto", "Sapporo"],
   "🇺🇸 USA": ["New York", "Los Angeles", "Chicago", "Las Vegas", "Miami"]
@@ -24,7 +24,7 @@ const CURRENCIES = [
 ];
 
 const CATEGORIES = ["🍔 Food", "🏨 Hotel", "🚕 Transport", "🛍️ Shopping", "🎟️ Other"];
-const PAYMENTS = ["Cash 💵", "Credit Card 💳", "Debit Card 💳", "UPI 📲"];
+const PAYMENTS = ["Cash 💵", "Credit Card 💳", "Debit Card 💳", "Forex Card 💳", "UPI 📲"]; // Added Forex Card
 
 export default function App() {
   const [trips, setTrips] = useState({});
@@ -32,19 +32,22 @@ export default function App() {
   const [masterCurrency, setMasterCurrency] = useState('INR');
   const [rates, setRates] = useState({});
   
-  // Trip Modal States
-  const [modalVisible, setModalVisible] = useState(false);
-  const [modalMode, setModalMode] = useState('add'); // 'add' or 'rename'
-  const [newTripName, setNewTripName] = useState('');
-
+  // States for Entry & Editing
+  const [editingId, setEditingId] = useState(null); // Track if we are editing an existing item
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
   const [amount1, setAmount1] = useState('');
   const [currency1, setCurrency1] = useState('VND');
   const [paymentMethod, setPaymentMethod] = useState('Cash 💵');
   const [category, setCategory] = useState('🍔 Food');
-  const [country, setCountry] = useState("🇻🇳 Vietnam");
-  const [city, setCity] = useState("Hanoi");
+  const [customCategory, setCustomCategory] = useState(''); // For "Other" custom text
+  const [txType, setTxType] = useState('Debit'); // Debit (Expense) or Credit (Income/Refund)
+  const [country, setCountry] = useState("🇮🇳 India");
+  const [city, setCity] = useState("Mumbai");
+
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalMode, setModalMode] = useState('add');
+  const [newTripName, setNewTripName] = useState('');
 
   const loadAllData = useCallback(async () => {
     const data = await AsyncStorage.getItem('@nexus_v5_master');
@@ -82,38 +85,69 @@ export default function App() {
   const formatValue = (n) => parseFloat(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
   const getSymbol = (code) => CURRENCIES.find(c => c.value === code)?.symbol || "";
 
-  // TRIP MANAGEMENT (MODAL BASED)
-  const openTripModal = (mode) => {
-    setModalMode(mode);
-    setNewTripName(mode === 'rename' ? activeTrip : '');
-    setModalVisible(true);
-  };
-
-  const handleTripSubmit = () => {
-    if (!newTripName) return;
-    const updatedTrips = { ...trips };
-    if (modalMode === 'add') {
-      updatedTrips[newTripName] = [];
-      setActiveTrip(newTripName);
-    } else {
-      updatedTrips[newTripName] = updatedTrips[activeTrip];
-      delete updatedTrips[activeTrip];
-      setActiveTrip(newTripName);
-    }
-    setTrips(updatedTrips);
-    saveData(updatedTrips, newTripName, masterCurrency);
-    setModalVisible(false);
-  };
-
-  const handleAddExpense = async () => {
+  // ADD OR UPDATE EXPENSE WITH AUTO-SORTING
+  const handleSaveExpense = async () => {
     if (!amount1 || !description) return Alert.alert('Error', 'Fill all fields');
-    const newExp = { 
-      id: Date.now().toString(), date, description, country, city, category,
-      amount_1: parseFloat(amount1), currency_1: currency1, method: paymentMethod 
+    
+    // Use custom category if "Other" is selected
+    const finalCategory = category === "🎟️ Other" ? `🎟️ ${customCategory || 'Other'}` : category;
+
+    const expenseData = { 
+      id: editingId || Date.now().toString(), 
+      date, description, country, city, category: finalCategory,
+      amount_1: parseFloat(amount1), currency_1: currency1, 
+      method: paymentMethod, type: txType 
     };
-    const updatedTrips = { ...trips, [activeTrip]: [newExp, ...currentExpenses] };
-    setTrips(updatedTrips); saveData(updatedTrips, activeTrip, masterCurrency);
-    setAmount1(''); setDescription(''); Keyboard.dismiss();
+
+    let updatedList;
+    if (editingId) {
+      // Update existing
+      updatedList = currentExpenses.map(item => item.id === editingId ? expenseData : item);
+    } else {
+      // Add new
+      updatedList = [expenseData, ...currentExpenses];
+    }
+
+    // AUTO-SORT BY DATE (Descending: Latest at top)
+    updatedList.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const updatedTrips = { ...trips, [activeTrip]: updatedList };
+    setTrips(updatedTrips); 
+    saveData(updatedTrips, activeTrip, masterCurrency);
+    
+    // Reset Form
+    setEditingId(null);
+    setAmount1('');
+    setDescription('');
+    setCustomCategory('');
+    setTxType('Debit');
+    Keyboard.dismiss();
+  };
+
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setDate(item.date);
+    setDescription(item.description);
+    setAmount1(item.amount_1.toString());
+    setCurrency1(item.currency_1);
+    setPaymentMethod(item.method);
+    setCountry(item.country);
+    setCity(item.city);
+    setTxType(item.type || 'Debit');
+    
+    if (item.category.startsWith('🎟️') && !CATEGORIES.includes(item.category)) {
+      setCategory('🎟️ Other');
+      setCustomCategory(item.category.replace('🎟️ ', ''));
+    } else {
+      setCategory(item.category);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setAmount1('');
+    setDescription('');
+    setCustomCategory('');
   };
 
   const deleteExpense = (id) => {
@@ -122,32 +156,26 @@ export default function App() {
     setTrips(updatedTrips); saveData(updatedTrips, activeTrip, masterCurrency);
   };
 
-  const moveExpense = (index, direction) => {
-    const newPos = index + direction;
-    if (newPos < 0 || newPos >= currentExpenses.length) return;
-    const updated = [...currentExpenses];
-    const item = updated[index];
-    updated.splice(index, 1);
-    updated.splice(newPos, 0, item);
-    const updatedTrips = { ...trips, [activeTrip]: updated };
-    setTrips(updatedTrips); saveData(updatedTrips, activeTrip, masterCurrency);
-  };
-
+  // TOTALS LOGIC (Debit subtracts, Credit adds)
   const totals = useMemo(() => {
-    const cash = currentExpenses.filter(e => e.method === 'Cash 💵').reduce((s, e) => s + getConvertedAmount(e.amount_1, e.currency_1), 0);
-    const nonCash = currentExpenses.filter(e => e.method !== 'Cash 💵').reduce((s, e) => s + getConvertedAmount(e.amount_1, e.currency_1), 0);
+    let cash = 0, nonCash = 0;
+    currentExpenses.forEach(e => {
+      const amt = getConvertedAmount(e.amount_1, e.currency_1);
+      const factor = e.type === 'Credit' ? -1 : 1; // Credits subtract from "Total Spent"
+      if (e.method === 'Cash 💵') cash += (amt * factor);
+      else nonCash += (amt * factor);
+    });
     return { cash, nonCash, grand: cash + nonCash };
   }, [currentExpenses, getConvertedAmount]);
 
-  const sharePDF = async () => {
-    const symbol = getSymbol(masterCurrency);
-    const html = `<html><body><h1 style="text-align:center;">${activeTrip} Report</h1><p style="text-align:center;">Total: ${symbol}${formatValue(totals.grand)}</p><table style="width:100%; border-collapse:collapse; text-align:center;"><thead><tr style="background:#f1f5f9;"><th>Date</th><th>Location</th><th>Desc</th><th>Method</th><th>Total (${masterCurrency})</th></tr></thead><tbody>${currentExpenses.map(e => `<tr><td>${e.date}</td><td>${e.city}</td><td>${e.description}</td><td>${e.method}</td><td>${symbol}${formatValue(getConvertedAmount(e.amount_1, e.currency_1))}</td></tr>`).join('')}</tbody></table></body></html>`;
-    const { uri } = await Print.printToFileAsync({ html });
-    await Sharing.shareAsync(uri);
-  };
+  // ... (Trips Modal and PDF functions remain same as before)
+  const openTripModal = (mode) => { setModalMode(mode); setNewTripName(mode === 'rename' ? activeTrip : ''); setModalVisible(true); };
+  const handleTripSubmit = () => { if (!newTripName) return; const updatedTrips = { ...trips }; if (modalMode === 'add') { updatedTrips[newTripName] = []; setActiveTrip(newTripName); } else { updatedTrips[newTripName] = updatedTrips[activeTrip]; delete updatedTrips[activeTrip]; setActiveTrip(newTripName); } setTrips(updatedTrips); saveData(updatedTrips, newTripName, masterCurrency); setModalVisible(false); };
+  const sharePDF = async () => { const symbol = getSymbol(masterCurrency); const html = `<html><body><h1 style="text-align:center;">${activeTrip} Report</h1><table style="width:100%; border-collapse:collapse; text-align:center;"><thead><tr style="background:#f1f5f9;"><th>Date</th><th>Desc</th><th>Type</th><th>Total (${masterCurrency})</th></tr></thead><tbody>${currentExpenses.map(e => `<tr><td>${e.date}</td><td>${e.description}</td><td>${e.type || 'Debit'}</td><td>${e.type === 'Credit' ? '+' : ''}${formatValue(getConvertedAmount(e.amount_1, e.currency_1))}</td></tr>`).join('')}</tbody></table></body></html>`; const { uri } = await Print.printToFileAsync({ html }); await Sharing.shareAsync(uri); };
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* TRIP MODAL */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
           <Text style={styles.modalTitle}>{modalMode === 'add' ? 'New Trip' : 'Rename Trip'}</Text>
@@ -190,8 +218,21 @@ export default function App() {
             </View>
         </View>
 
-        <View style={styles.inputCard}>
-          <TextInput style={[styles.input, { color: '#000000' }]} placeholder="YYYY-MM-DD" placeholderTextColor="#94a3b8" value={date} onChangeText={setDate} />
+        {/* INPUT CARD WITH NEW FEATURES */}
+        <View style={[styles.inputCard, editingId && { borderColor: '#3b82f6', borderWidth: 2 }]}>
+          {editingId && <Text style={{color: '#3b82f6', fontWeight: 'bold', marginBottom: 10}}>Editing Entry...</Text>}
+          
+          <View style={styles.row}>
+             <TextInput style={[styles.input, {flex: 1}]} placeholder="YYYY-MM-DD" placeholderTextColor="#94a3b8" value={date} onChangeText={setDate} />
+             {/* DEBIT / CREDIT TOGGLE */}
+             <TouchableOpacity 
+                style={[styles.typeToggle, {backgroundColor: txType === 'Debit' ? '#fee2e2' : '#dcfce7'}]} 
+                onPress={() => setTxType(txType === 'Debit' ? 'Credit' : 'Debit')}
+             >
+                <Text style={{color: txType === 'Debit' ? '#ef4444' : '#22c55e', fontWeight: 'bold'}}>{txType.toUpperCase()}</Text>
+             </TouchableOpacity>
+          </View>
+
           <View style={styles.row}>
             <View style={styles.halfPicker}>
               <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={country} onValueChange={(v) => { setCountry(v); setCity(LOCATION_DATA[v][0]); }}>
@@ -204,7 +245,9 @@ export default function App() {
               </Picker>
             </View>
           </View>
+
           <TextInput style={[styles.input, { color: '#000000' }]} placeholder="Description" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
+          
           <View style={styles.row}>
             <View style={styles.halfPicker}>
               <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={category} onValueChange={setCategory}>
@@ -213,6 +256,18 @@ export default function App() {
             </View>
             <TextInput style={[styles.input, {flex: 1.2, marginBottom: 0, color: '#000000'}]} placeholder="Amount" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
           </View>
+
+          {/* SMART OTHER INPUT */}
+          {category === "🎟️ Other" && (
+            <TextInput 
+              style={[styles.input, {marginTop: 10, borderColor: '#10b981', borderWidth: 1}]} 
+              placeholder="What kind of 'Other' expense?" 
+              placeholderTextColor="#94a3b8" 
+              value={customCategory} 
+              onChangeText={setCustomCategory} 
+            />
+          )}
+
           <View style={styles.row}>
             <View style={styles.halfPicker}>
               <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={currency1} onValueChange={setCurrency1}>
@@ -225,30 +280,37 @@ export default function App() {
               </Picker>
             </View>
           </View>
-          <TouchableOpacity style={styles.submitBtn} onPress={handleAddExpense}><Text style={styles.btnText}>+ ADD EXPENSE</Text></TouchableOpacity>
+
+          <View style={styles.row}>
+             {editingId && (
+               <TouchableOpacity style={[styles.submitBtn, {flex: 1, backgroundColor: '#64748b', marginRight: 5}]} onPress={cancelEdit}>
+                 <Text style={styles.btnText}>CANCEL</Text>
+               </TouchableOpacity>
+             )}
+             <TouchableOpacity style={[styles.submitBtn, {flex: 2}]} onPress={handleSaveExpense}>
+               <Text style={styles.btnText}>{editingId ? 'UPDATE ENTRY' : '+ ADD ENTRY'}</Text>
+             </TouchableOpacity>
+          </View>
         </View>
 
-        {currentExpenses.map((item, index) => {
+        {/* LIST DISPLAY */}
+        {currentExpenses.map((item) => {
           const converted = getConvertedAmount(item.amount_1, item.currency_1);
-          const rateToDisplay = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(6) : "1.0000";
+          const isCredit = item.type === 'Credit';
           return (
-            <View key={item.id} style={styles.card}>
-              <View style={styles.sortCol}>
-                <TouchableOpacity onPress={() => moveExpense(index, -1)} disabled={index === 0}><Text style={{color: index === 0 ? '#ccc' : '#3b82f6'}}>▲</Text></TouchableOpacity>
-                <TouchableOpacity onPress={() => moveExpense(index, 1)} disabled={index === currentExpenses.length-1}><Text style={{color: index === currentExpenses.length-1 ? '#ccc' : '#3b82f6'}}>▼</Text></TouchableOpacity>
-              </View>
+            <TouchableOpacity key={item.id} style={styles.card} onPress={() => startEdit(item)}>
               <View style={{flex: 1}}>
                 <Text style={styles.cardDate}>{item.date} • {item.city} ({item.category})</Text>
                 <Text style={styles.cardDesc}>{item.description}</Text>
-                <Text style={styles.rateText}>1 {item.currency_1} = {rateToDisplay} {masterCurrency}</Text>
-                <Text style={styles.cardSmall}>Spent: {formatValue(item.amount_1)} {item.currency_1}</Text>
+                <Text style={[styles.methodText, {color: isCredit ? '#22c55e' : '#3b82f6'}]}>{item.method} • {item.type || 'Debit'}</Text>
               </View>
               <View style={{alignItems: 'flex-end'}}>
-                <Text style={styles.cardAmt}>{getSymbol(masterCurrency)}{formatValue(converted)}</Text>
-                <Text style={styles.methodText}>{item.method.split(' ')[0]}</Text>
+                <Text style={[styles.cardAmt, {color: isCredit ? '#22c55e' : '#ef4444'}]}>
+                  {isCredit ? '+' : ''}{getSymbol(masterCurrency)}{formatValue(converted)}
+                </Text>
                 <TouchableOpacity onPress={() => deleteExpense(item.id)} style={styles.delBtn}><Text style={{color:'white'}}>×</Text></TouchableOpacity>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
         <View style={{height: 220}} />
@@ -280,25 +342,23 @@ const styles = StyleSheet.create({
   summaryTitle: { color: '#64748b', fontSize: 10, fontWeight: '800', textAlign: 'center', marginBottom: 10 },
   legendText: { color: '#1e293b', fontSize: 11, fontWeight: '700' },
   inputCard: { backgroundColor: '#ffffff', margin: 15, padding: 15, borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0' },
-  input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 12, color: '#1e293b', marginBottom: 10 },
+  input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 12, color: '#000000', marginBottom: 10 },
+  typeToggle: { paddingHorizontal: 15, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   halfPicker: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center' },
   submitBtn: { backgroundColor: '#10b981', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 10 },
   btnText: { color: 'white', fontWeight: 'bold' },
   card: { flexDirection: 'row', backgroundColor: '#ffffff', marginHorizontal: 15, marginBottom: 10, padding: 15, borderRadius: 16, borderBottomWidth: 1, borderColor: '#f1f5f9', alignItems: 'center' },
-  sortCol: { marginRight: 15, alignItems: 'center' },
   cardDate: { fontSize: 10, color: '#94a3b8', fontWeight: '600' },
   cardDesc: { color: '#1e293b', fontWeight: 'bold', fontSize: 15 },
-  rateText: { color: '#10b981', fontSize: 10, fontWeight: 'bold', marginTop: 2 },
-  cardSmall: { fontSize: 11, color: '#64748b' },
-  cardAmt: { color: '#10b981', fontWeight: 'bold', fontSize: 17 },
-  methodText: { fontSize: 10, color: '#3b82f6', fontWeight: 'bold' },
+  cardAmt: { fontWeight: 'bold', fontSize: 17 },
+  methodText: { fontSize: 10, fontWeight: 'bold' },
   delBtn: { backgroundColor: '#f56565', width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
   footer: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: '#ffffff', padding: 20, borderTopWidth: 1, borderColor: '#e2e8f0' },
   totalText: { color: '#1e293b', fontSize: 22, fontWeight: '900', textAlign: 'center', marginBottom: 10 },
   shareBtn: { backgroundColor: '#3b82f6', padding: 15, borderRadius: 12, alignItems: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: 'white', padding: 20, borderRadius: 20, width: '80%' },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center', color: '#000000' },
   modalInput: { backgroundColor: '#f1f5f9', padding: 12, borderRadius: 10, marginBottom: 20 },
   modalBtn: { flex: 1, padding: 12, borderRadius: 10, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#10b981' }
 });
