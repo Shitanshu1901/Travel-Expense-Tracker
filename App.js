@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, Keyboard, ScrollView, Modal, Platform, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, Keyboard, ScrollView, Modal, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import * as Print from 'expo-print';
@@ -28,9 +28,9 @@ const PAYMENTS = ["Cash 💵", "Credit Card 💳", "Debit Card 💳", "Forex Car
 
 export default function App() {
   const scrollRef = useRef(null);
-  const [currentTab, setCurrentTab] = useState('Home'); // 'Home' or 'Charts'
+  const [currentTab, setCurrentTab] = useState('Home');
   const [trips, setTrips] = useState({});
-  const [tripBudgets, setTripBudgets] = useState({}); // Optional budgets per trip
+  const [tripBudgets, setTripBudgets] = useState({});
   const [activeTrip, setActiveTrip] = useState('My First Trip');
   const [masterCurrency, setMasterCurrency] = useState('INR');
   const [rates, setRates] = useState({});
@@ -47,9 +47,12 @@ export default function App() {
   const [txType, setTxType] = useState('Debit');
   const [country, setCountry] = useState("🇮🇳 India");
   const [city, setCity] = useState("Mumbai");
-  const [isSplit, setIsSplit] = useState(false);
 
-  // Trip Modal
+  // Split Logic States
+  const [isSplit, setIsSplit] = useState(false);
+  const [splitNames, setSplitNames] = useState(''); // e.g. "Rahul, Amit"
+
+  // Modals
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState('add');
   const [newTripName, setNewTripName] = useState('');
@@ -110,10 +113,13 @@ export default function App() {
 
   const handleSaveExpense = async () => {
     if (!amount1 || !description) return Alert.alert('Error', 'Fill all fields');
+    if (isSplit && !splitNames) return Alert.alert('Split Info', 'Please enter names of friends involved');
+
     const finalCategory = category === "🎟️ Other" ? `🎟️ ${customCategory || 'Other'}` : category;
     const expenseData = { 
       id: editingId || Date.now().toString(), date, description, country, city, category: finalCategory,
-      amount_1: parseFloat(amount1), currency_1: currency1, method: paymentMethod, type: txType, split: isSplit 
+      amount_1: parseFloat(amount1), currency_1: currency1, method: paymentMethod, type: txType, 
+      split: isSplit, splitNames: splitNames 
     };
 
     let updatedList = editingId ? currentExpenses.map(item => item.id === editingId ? expenseData : item) : [expenseData, ...currentExpenses];
@@ -122,76 +128,51 @@ export default function App() {
     const updatedTrips = { ...trips, [activeTrip]: updatedList };
     setTrips(updatedTrips); saveData(updatedTrips, activeTrip, masterCurrency, tripBudgets);
     
-    setEditingId(null); setAmount1(''); setDescription(''); setCustomCategory(''); setIsSplit(false); Keyboard.dismiss();
+    setEditingId(null); setAmount1(''); setDescription(''); setCustomCategory(''); setIsSplit(false); setSplitNames(''); Keyboard.dismiss();
   };
 
   const startEdit = (item) => {
     setEditingId(item.id); setDate(item.date); setDescription(item.description); setAmount1(item.amount_1.toString());
-    setCurrency1(item.currency_1); setPaymentMethod(item.method); setCountry(item.country); setCity(item.city); setTxType(item.type || 'Debit'); setIsSplit(item.split || false);
+    setCurrency1(item.currency_1); setPaymentMethod(item.method); setCountry(item.country); setCity(item.city); setTxType(item.type || 'Debit'); 
+    setIsSplit(item.split || false); setSplitNames(item.splitNames || '');
     if (item.category.startsWith('🎟️') && !CATEGORIES.includes(item.category)) { setCategory('🎟️ Other'); setCustomCategory(item.category.replace('🎟️ ', '')); } else { setCategory(item.category); }
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
-  const openTripModal = (mode) => {
-    setModalMode(mode);
-    setNewTripName(mode === 'rename' ? activeTrip : '');
-    setNewTripBudget(mode === 'rename' ? (tripBudgets[activeTrip] || '').toString() : '');
-    setModalVisible(true);
+  const deleteExpense = (id) => {
+    Alert.alert("Delete", "Are you sure?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", onPress: () => {
+        const updated = currentExpenses.filter(e => e.id !== id);
+        const updatedTrips = { ...trips, [activeTrip]: updated };
+        setTrips(updatedTrips); saveData(updatedTrips, activeTrip, masterCurrency, tripBudgets);
+      }}
+    ]);
   };
 
-  const handleTripSubmit = () => {
-    if (!newTripName) return;
-    const updatedTrips = { ...trips };
-    const updatedBudgets = { ...tripBudgets };
-    const budgetVal = parseFloat(newTripBudget) || 0;
-
-    if (modalMode === 'add') {
-      updatedTrips[newTripName] = [];
-      updatedBudgets[newTripName] = budgetVal;
-      setActiveTrip(newTripName);
-    } else {
-      updatedTrips[newTripName] = updatedTrips[activeTrip];
-      updatedBudgets[newTripName] = budgetVal;
-      if (newTripName !== activeTrip) {
-        delete updatedTrips[activeTrip];
-        delete updatedBudgets[activeTrip];
-      }
-      setActiveTrip(newTripName);
-    }
-    setTrips(updatedTrips); setTripBudgets(updatedBudgets);
-    saveData(updatedTrips, newTripName, masterCurrency, updatedBudgets);
-    setModalVisible(false);
+  const sharePDF = async () => {
+    const symbol = getSymbol(masterCurrency);
+    const html = `<html><body style="font-family:sans-serif;padding:20px;"><h1 style="text-align:center;">${activeTrip}</h1><h3 style="text-align:center;">Total: ${symbol}${formatValue(totals.grand)}</h3><table style="width:100%; border-collapse:collapse; margin-top:20px;"><thead><tr style="background:#f1f5f9;"><th>Date</th><th>Location</th><th>Desc</th><th>Method</th><th>Total (${masterCurrency})</th></tr></thead><tbody>${currentExpenses.map(e => `<tr><td style="border:1px solid #ddd;padding:8px;">${e.date}</td><td style="border:1px solid #ddd;padding:8px;">${e.city}</td><td style="border:1px solid #ddd;padding:8px;">${e.description}</td><td style="border:1px solid #ddd;padding:8px;">${e.method.split(' ')[0]}</td><td style="border:1px solid #ddd;padding:8px;">${e.type === 'Credit' ? '+' : ''}${formatValue(getConvertedAmount(e.amount_1, e.currency_1))}</td></tr>`).join('')}</tbody></table></body></html>`;
+    const { uri } = await Print.printToFileAsync({ html });
+    await Sharing.shareAsync(uri);
   };
 
-  // UI RENDERERS
   const renderHome = () => (
     <ScrollView ref={scrollRef} stickyHeaderIndices={[0]}>
       <View style={styles.header}>
         <Text style={styles.appTitle}>EXPENSE TRACKER</Text>
         <Text style={styles.authorTag}>Made by Shitanshu Chokshi</Text>
-        
-        {/* OPTIONAL BUDGET BAR */}
         {currentBudget > 0 && (
           <View style={styles.budgetContainer}>
             <View style={styles.budgetHeader}>
-              <Text style={styles.budgetLabel}>Trip Budget Status</Text>
+              <Text style={styles.budgetLabel}>Budget Status</Text>
               <Text style={styles.budgetLabel}>{getSymbol(masterCurrency)}{formatValue(totals.grand)} / {formatValue(currentBudget)}</Text>
             </View>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { 
-                width: `${budgetProgress * 100}%`, 
-                backgroundColor: budgetProgress > 0.9 ? '#ef4444' : budgetProgress > 0.7 ? '#f59e0b' : '#10b981' 
-              }]} />
-            </View>
+            <View style={styles.progressBarBg}><View style={[styles.progressBarFill, { width: `${budgetProgress * 100}%`, backgroundColor: budgetProgress > 0.9 ? '#ef4444' : '#10b981' }]} /></View>
           </View>
         )}
-
         <View style={[styles.row, {marginTop: 15}]}>
-          <View style={styles.tripPicker}>
-            <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={activeTrip} onValueChange={(t) => { setActiveTrip(t); saveData(trips, t, masterCurrency, tripBudgets); }}>
-              {Object.keys(trips).length > 0 ? Object.keys(trips).map(t => <Picker.Item key={t} label={t} value={t} />) : <Picker.Item label="My First Trip" value="My First Trip" />}
-            </Picker>
-          </View>
+          <View style={styles.tripPicker}><Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={activeTrip} onValueChange={(t) => setActiveTrip(t)}>{Object.keys(trips).map(t => <Picker.Item key={t} label={t} value={t} />)}</Picker></View>
           <TouchableOpacity style={styles.iconBtn} onPress={() => openTripModal('rename')}><Text>✏️</Text></TouchableOpacity>
           <TouchableOpacity style={styles.plusBtn} onPress={() => openTripModal('add')}><Text style={styles.plusText}>+</Text></TouchableOpacity>
         </View>
@@ -200,79 +181,98 @@ export default function App() {
       <View style={styles.inputCard}>
         <View style={styles.row}>
            <TextInput style={[styles.input, {flex: 1}]} placeholder="YYYY-MM-DD" placeholderTextColor="#94a3b8" value={date} onChangeText={setDate} />
-           <TouchableOpacity style={[styles.typeToggle, {backgroundColor: txType === 'Debit' ? '#fee2e2' : '#dcfce7'}]} onPress={() => setTxType(txType === 'Debit' ? 'Credit' : 'Debit')}>
-              <Text style={{color: txType === 'Debit' ? '#ef4444' : '#22c55e', fontWeight: 'bold'}}>{txType.toUpperCase()}</Text>
-           </TouchableOpacity>
+           <TouchableOpacity style={[styles.typeToggle, {backgroundColor: txType === 'Debit' ? '#fee2e2' : '#dcfce7'}]} onPress={() => setTxType(txType === 'Debit' ? 'Credit' : 'Debit')}><Text style={{color: txType === 'Debit' ? '#ef4444' : '#22c55e', fontWeight: 'bold'}}>{txType.toUpperCase()}</Text></TouchableOpacity>
         </View>
         
-        <TextInput style={[styles.input, { color: '#000000' }]} placeholder="Description" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
+        {/* ADDED MARGIN HERE FOR SPACING */}
+        <TextInput style={[styles.input, { color: '#000000', marginBottom: 15 }]} placeholder="Description" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
         
         <View style={styles.row}>
-          <View style={styles.halfPicker}>
+          <View style={[styles.halfPicker, {marginRight: 5}]}>
              <Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={category} onValueChange={setCategory}>{CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}</Picker>
           </View>
-          <TextInput style={[styles.input, {flex: 1.2, marginBottom: 0, color: '#000000'}]} placeholder="Amount" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
-          {/* CAMERA BUTTON */}
-          <TouchableOpacity style={styles.cameraBtn} onPress={() => Alert.alert("Camera", "Receipt scanning coming in Phase 2!")}><Text>📷</Text></TouchableOpacity>
+          <TextInput style={[styles.input, {flex: 1.2, color: '#000000'}]} placeholder="Amount" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
+          <TouchableOpacity style={styles.cameraBtn} onPress={() => Alert.alert("Coming Soon", "Camera/OCR logic is for Phase 3!")}><Text>📷</Text></TouchableOpacity>
         </View>
 
-        {category === "🎟️ Other" && <TextInput style={[styles.input, {marginTop: 10, borderColor: '#10b981', borderWidth: 1}]} placeholder="Specify Other Category" placeholderTextColor="#94a3b8" value={customCategory} onChangeText={setCustomCategory} />}
+        {category === "🎟️ Other" && <TextInput style={[styles.input, {marginTop: 10, borderColor: '#10b981', borderWidth: 1}]} placeholder="Describe category..." placeholderTextColor="#94a3b8" value={customCategory} onChangeText={setCustomCategory} />}
 
-        <View style={styles.row}>
+        <View style={[styles.row, {marginTop: 10}]}>
           <View style={styles.halfPicker}><Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={currency1} onValueChange={setCurrency1}>{CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}</Picker></View>
           <View style={styles.halfPicker}><Picker style={{ color: '#000000' }} dropdownIconColor="#000000" selectedValue={paymentMethod} onValueChange={setPaymentMethod}>{PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}</Picker></View>
         </View>
 
         <View style={styles.rowBetween}>
            <Text style={styles.subText}>Split with Friends?</Text>
-           <TouchableOpacity onPress={() => setIsSplit(!isSplit)} style={[styles.splitToggle, isSplit && {backgroundColor: '#3b82f6'}]}>
-              <Text style={{color: isSplit ? 'white' : '#64748b', fontSize: 10, fontWeight: 'bold'}}>{isSplit ? 'YES 👥' : 'NO'}</Text>
-           </TouchableOpacity>
+           <TouchableOpacity onPress={() => setIsSplit(!isSplit)} style={[styles.splitToggle, isSplit && {backgroundColor: '#3b82f6'}]}><Text style={{color: isSplit ? 'white' : '#64748b', fontSize: 10, fontWeight: 'bold'}}>{isSplit ? 'YES 👥' : 'NO'}</Text></TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.submitBtn} onPress={handleSaveExpense}><Text style={styles.btnText}>{editingId ? 'UPDATE ENTRY' : '+ ADD ENTRY'}</Text></TouchableOpacity>
+        {isSplit && <TextInput style={[styles.input, {marginTop: 5, borderColor: '#3b82f6', borderWidth: 1}]} placeholder="Names (e.g. Rahul, Amit)" placeholderTextColor="#94a3b8" value={splitNames} onChangeText={setSplitNames} />}
+
+        <TouchableOpacity style={styles.submitBtn} onPress={handleSaveExpense}><Text style={styles.btnText}>{editingId ? 'UPDATE' : '+ ADD EXPENSE'}</Text></TouchableOpacity>
       </View>
 
       {currentExpenses.map((item) => {
         const converted = getConvertedAmount(item.amount_1, item.currency_1);
-        const isCredit = item.type === 'Credit';
+        const share = item.split ? converted / (item.splitNames.split(',').length + 1) : null;
         return (
           <TouchableOpacity key={item.id} style={styles.card} onPress={() => startEdit(item)}>
             <View style={{flex: 1}}>
               <Text style={styles.cardDate}>{item.date} {item.split ? '• 👥 Split' : ''}</Text>
               <Text style={styles.cardDesc}>{item.description}</Text>
-              <Text style={[styles.methodText, {color: isCredit ? '#22c55e' : '#3b82f6'}]}>{item.method} • {item.category}</Text>
+              {item.split && <Text style={{fontSize: 10, color: '#3b82f6'}}>Share: {getSymbol(masterCurrency)}{formatValue(share)} per person</Text>}
             </View>
             <View style={{alignItems: 'flex-end'}}>
-              <Text style={[styles.cardAmt, {color: isCredit ? '#22c55e' : '#ef4444'}]}>{isCredit ? '+' : ''}{getSymbol(masterCurrency)}{formatValue(converted)}</Text>
+              <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(converted)}</Text>
+              <TouchableOpacity onPress={() => deleteExpense(item.id)}><Text style={{color: 'red', fontSize: 18}}>×</Text></TouchableOpacity>
             </View>
           </TouchableOpacity>
         );
       })}
-      <View style={{height: 100}} />
+      
+      {/* EXPORT BUTTON MOVED HERE TO BE VISIBLE */}
+      <TouchableOpacity style={styles.mainExportBtn} onPress={sharePDF}><Text style={styles.btnText}>📤 EXPORT REPORT</Text></TouchableOpacity>
+      <View style={{height: 120}} />
     </ScrollView>
   );
 
-  const renderCharts = () => (
-    <View style={styles.chartPlaceholder}>
-      <Text style={styles.appTitle}>ANALYTICS 📊</Text>
-      <View style={styles.summaryCard}>
-         <Text style={styles.summaryTitle}>Coming in Phase 2:</Text>
-         <Text style={styles.legendText}>• Spending Pie Chart</Text>
-         <Text style={styles.legendText}>• Daily Trend Graphs</Text>
-         <Text style={styles.legendText}>• Split Settlement Details</Text>
-      </View>
-    </View>
-  );
+  const renderCharts = () => {
+    const dataByCat = CATEGORIES.reduce((acc, cat) => {
+      const total = currentExpenses.filter(e => e.category === cat || (cat === "🎟️ Other" && e.category.startsWith("🎟️"))).reduce((sum, e) => sum + getConvertedAmount(e.amount_1, e.currency_1), 0);
+      acc[cat] = total; return acc;
+    }, {});
+
+    return (
+      <ScrollView style={{flex: 1, padding: 20}}>
+        <Text style={styles.appTitle}>ANALYTICS 📊</Text>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Category Breakdown</Text>
+          {Object.entries(dataByCat).map(([cat, val]) => (
+            <View key={cat} style={styles.rowBetween}>
+              <Text style={styles.legendText}>{cat}</Text>
+              <Text style={styles.legendText}>{getSymbol(masterCurrency)}{formatValue(val)}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.summaryCard}>
+           <Text style={styles.summaryTitle}>Split Summary</Text>
+           <Text style={styles.legendText}>Total Split Expenses: {currentExpenses.filter(e => e.split).length}</Text>
+        </View>
+      </ScrollView>
+    );
+  };
+
+  // Remaining Modal functions (openTripModal, handleTripSubmit) go here...
+  const openTripModal = (mode) => { setModalMode(mode); setNewTripName(mode === 'rename' ? activeTrip : ''); setNewTripBudget(mode === 'rename' ? (tripBudgets[activeTrip] || '').toString() : ''); setModalVisible(true); };
+  const handleTripSubmit = () => { if (!newTripName) return; const updatedTrips = { ...trips }; const updatedBudgets = { ...tripBudgets }; const bVal = parseFloat(newTripBudget) || 0; if (modalMode === 'add') { updatedTrips[newTripName] = []; updatedBudgets[newTripName] = bVal; setActiveTrip(newTripName); } else { updatedTrips[newTripName] = updatedTrips[activeTrip]; updatedBudgets[newTripName] = bVal; if (newTripName !== activeTrip) { delete updatedTrips[activeTrip]; delete updatedBudgets[activeTrip]; } setActiveTrip(newTripName); } setTrips(updatedTrips); setTripBudgets(updatedBudgets); saveData(updatedTrips, newTripName, masterCurrency, updatedBudgets); setModalVisible(false); };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* MODAL FOR NEW TRIP & BUDGET */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
           <Text style={styles.modalTitle}>{modalMode === 'add' ? 'New Trip' : 'Edit Trip'}</Text>
-          <TextInput style={styles.modalInput} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name (e.g. Vietnam 2026)" placeholderTextColor="#94a3b8" />
-          <TextInput style={styles.modalInput} value={newTripBudget} onChangeText={setNewTripBudget} placeholder="Optional Budget (In Home Currency)" keyboardType="numeric" placeholderTextColor="#94a3b8" />
+          <TextInput style={styles.modalInput} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name" placeholderTextColor="#94a3b8" />
+          <TextInput style={styles.modalInput} value={newTripBudget} onChangeText={setNewTripBudget} placeholder="Optional Budget" keyboardType="numeric" placeholderTextColor="#94a3b8" />
           <View style={styles.row}>
             <TouchableOpacity style={[styles.modalBtn, {backgroundColor: '#ccc'}]} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
             <TouchableOpacity style={styles.modalBtn} onPress={handleTripSubmit}><Text style={{color:'white'}}>Save</Text></TouchableOpacity>
@@ -282,16 +282,9 @@ export default function App() {
 
       {currentTab === 'Home' ? renderHome() : renderCharts()}
 
-      {/* BOTTOM TAB BAR */}
       <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}>
-          <Text style={[styles.tabIcon, currentTab === 'Home' && styles.activeTab]}>🏠</Text>
-          <Text style={[styles.tabText, currentTab === 'Home' && styles.activeTab]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Charts')}>
-          <Text style={[styles.tabIcon, currentTab === 'Charts' && styles.activeTab]}>📊</Text>
-          <Text style={[styles.tabText, currentTab === 'Charts' && styles.activeTab]}>Charts</Text>
-        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}><Text style={[styles.tabIcon, currentTab === 'Home' && styles.activeTab]}>🏠</Text><Text style={[styles.tabText, currentTab === 'Home' && styles.activeTab]}>Home</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Charts')}><Text style={[styles.tabIcon, currentTab === 'Charts' && styles.activeTab]}>📊</Text><Text style={[styles.tabText, currentTab === 'Charts' && styles.activeTab]}>Charts</Text></TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -307,33 +300,32 @@ const styles = StyleSheet.create({
   budgetLabel: { fontSize: 11, fontWeight: '700', color: '#64748b' },
   progressBarBg: { height: 8, backgroundColor: '#e2e8f0', borderRadius: 4, overflow: 'hidden' },
   progressBarFill: { height: '100%' },
-  row: { flexDirection: 'row', gap: 10, marginBottom: 10, alignItems: 'center' },
+  row: { flexDirection: 'row', marginBottom: 10, alignItems: 'center' },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   tripPicker: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12, height: 45, justifyContent: 'center' },
-  iconBtn: { backgroundColor: '#f1f5f9', width: 45, height: 45, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  plusBtn: { backgroundColor: '#10b981', width: 45, height: 45, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  iconBtn: { backgroundColor: '#f1f5f9', width: 45, height: 45, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+  plusBtn: { backgroundColor: '#10b981', width: 45, height: 45, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
   plusText: { color: 'white', fontSize: 24, fontWeight: 'bold' },
   inputCard: { backgroundColor: '#ffffff', margin: 15, padding: 15, borderRadius: 20, elevation: 3 },
   input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 12, color: '#000000' },
-  cameraBtn: { backgroundColor: '#f1f5f9', width: 50, height: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  cameraBtn: { backgroundColor: '#f1f5f9', width: 45, height: 45, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
   halfPicker: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center' },
-  typeToggle: { paddingHorizontal: 12, height: 50, borderRadius: 12, justifyContent: 'center' },
+  typeToggle: { paddingHorizontal: 12, height: 45, borderRadius: 12, justifyContent: 'center', marginLeft: 10 },
   splitToggle: { padding: 8, borderRadius: 8, backgroundColor: '#e2e8f0' },
-  submitBtn: { backgroundColor: '#10b981', padding: 15, borderRadius: 12, alignItems: 'center' },
+  submitBtn: { backgroundColor: '#10b981', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 15 },
+  mainExportBtn: { backgroundColor: '#3b82f6', padding: 15, borderRadius: 12, alignItems: 'center', margin: 15 },
   btnText: { color: 'white', fontWeight: 'bold' },
   card: { flexDirection: 'row', backgroundColor: '#ffffff', marginHorizontal: 15, marginBottom: 10, padding: 15, borderRadius: 16, borderLeftWidth: 4, borderColor: '#3b82f6' },
   cardDate: { fontSize: 10, color: '#94a3b8', fontWeight: 'bold' },
   cardDesc: { color: '#1e293b', fontWeight: 'bold', fontSize: 15 },
   cardAmt: { fontWeight: 'bold', fontSize: 17 },
-  methodText: { fontSize: 10, fontWeight: 'bold' },
   subText: { color: '#64748b', fontSize: 12, fontWeight: 'bold' },
   tabBar: { flexDirection: 'row', backgroundColor: '#ffffff', borderTopWidth: 1, borderColor: '#e2e8f0', height: 70, paddingBottom: 10 },
   tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   tabIcon: { fontSize: 24, color: '#94a3b8' },
   tabText: { fontSize: 10, color: '#94a3b8', fontWeight: 'bold' },
   activeTab: { color: '#3b82f6' },
-  chartPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  summaryCard: { backgroundColor: '#ffffff', width: '100%', padding: 20, borderRadius: 20, marginTop: 20 },
+  summaryCard: { backgroundColor: '#ffffff', padding: 20, borderRadius: 20, marginBottom: 15, elevation: 2 },
   summaryTitle: { fontWeight: 'bold', color: '#1e293b', marginBottom: 10 },
   legendText: { color: '#64748b', marginBottom: 5 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
