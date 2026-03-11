@@ -26,7 +26,6 @@ export default function App() {
   const [masterCurrency, setMasterCurrency] = useState('INR');
   const [rates, setRates] = useState({});
   
-  // Input States
   const [editingId, setEditingId] = useState(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
@@ -237,10 +236,8 @@ export default function App() {
   );
 
   const renderCharts = () => {
-    // 1. Calculate Settlements
     const settlements = {};
     currentExpenses.filter(e => e.split && e.splitNames).forEach(e => {
-      // Split the names, remove extra spaces, and filter out empty strings
       const friends = e.splitNames.split(',').map(n => n.trim()).filter(n => n);
       if (friends.length > 0) {
         const share = getConvertedAmount(e.amount_1, e.currency_1) / (friends.length + 1);
@@ -253,7 +250,6 @@ export default function App() {
     return (
       <ScrollView style={{flex:1, padding: 20}}>
         <Text style={styles.appTitle}>ANALYTICS 📊</Text>
-        
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Spending by Category</Text>
           {CATEGORIES.map(cat => {
@@ -268,7 +264,6 @@ export default function App() {
           })}
         </View>
 
-        {/* RESTORED: WHO OWES YOU CARD */}
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Who Owes You? 👥</Text>
           {Object.keys(settlements).length > 0 ? (
@@ -291,18 +286,15 @@ export default function App() {
 
   const renderFeatures = () => (
     <ScrollView style={{flex:1, padding: 20}}>
-      <Text style={[styles.appTitle, {marginBottom: 20}]}>WHAT'S NEW 🚀</Text>
+      <Text style={[styles.appTitle, {marginBottom: 20, color: '#000'}]}>WHAT'S NEW 🚀</Text>
       
-      <View style={[styles.summaryCard, {alignItems: 'center', marginBottom: 20, backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderWidth: 2, borderStyle: 'dashed'}]}>
-        <Text style={{fontSize: 40, marginBottom: 10}}>🖼️</Text>
-        {/* THE INFOGRAPHIC IMAGE */}
       <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden' }]}>
         <Image 
           source={{ uri: 'https://github.com/Shitanshu1901/Travel-Expense-Tracker/blob/main/App%20Infographic.png' }} 
           style={{ width: '100%', height: 400 }} 
           resizeMode="contain"
         />
-    </View>
+      </View>
 
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>🌍 Smart Currency Engine</Text>
