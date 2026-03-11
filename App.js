@@ -177,7 +177,6 @@ export default function App() {
             <Text style={styles.legendText}>🟢 Cash: {getSymbol(masterCurrency)}{formatValue(totals.cash)}</Text>
             <Text style={styles.legendText}>🔵 Card/UPI: {getSymbol(masterCurrency)}{formatValue(totals.nonCash)}</Text>
         </View>
-        {/* GRAND TOTAL ADDED HERE */}
         <Text style={styles.grandTotalText}>Grand Total: {getSymbol(masterCurrency)}{formatValue(totals.grand)}</Text>
         {currentBudget > 0 && (
           <View style={styles.budgetContainer}>
@@ -213,8 +212,7 @@ export default function App() {
       {currentExpenses.map(item => {
         const conv = getConvertedAmount(item.amount_1, item.currency_1);
         const rate = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(4) : "1.00";
-        // Calculate split display
-        const friendsCount = item.split ? item.splitNames.split(',').length + 1 : 1;
+        const friendsCount = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
         const share = conv / friendsCount;
 
         return (
@@ -238,22 +236,103 @@ export default function App() {
     </ScrollView>
   );
 
-  const renderCharts = () => (
+  const renderCharts = () => {
+    // 1. Calculate Settlements
+    const settlements = {};
+    currentExpenses.filter(e => e.split && e.splitNames).forEach(e => {
+      // Split the names, remove extra spaces, and filter out empty strings
+      const friends = e.splitNames.split(',').map(n => n.trim()).filter(n => n);
+      if (friends.length > 0) {
+        const share = getConvertedAmount(e.amount_1, e.currency_1) / (friends.length + 1);
+        friends.forEach(f => {
+          settlements[f] = (settlements[f] || 0) + share;
+        });
+      }
+    });
+
+    return (
+      <ScrollView style={{flex:1, padding: 20}}>
+        <Text style={styles.appTitle}>ANALYTICS 📊</Text>
+        
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Spending by Category</Text>
+          {CATEGORIES.map(cat => {
+            const total = currentExpenses.filter(e => e.category.includes(cat)).reduce((s, e) => s + getConvertedAmount(e.amount_1, e.currency_1), 0);
+            const perc = totals.grand > 0 ? (total / totals.grand) * 100 : 0;
+            return (
+              <View key={cat} style={{marginBottom: 15}}>
+                <View style={styles.rowBetween}><Text style={{color:'#000', fontWeight: 'bold'}}>{cat}</Text><Text style={{color:'#000'}}>{perc.toFixed(0)}%</Text></View>
+                <View style={styles.progressBarBg}><View style={[styles.progressBarFill, {width: `${perc}%`, backgroundColor: '#3b82f6'}]} /></View>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* RESTORED: WHO OWES YOU CARD */}
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Who Owes You? 👥</Text>
+          {Object.keys(settlements).length > 0 ? (
+            Object.entries(settlements).map(([name, amt]) => (
+              <View key={name} style={[styles.rowBetween, {marginBottom: 10}]}>
+                <Text style={{color:'#000', fontWeight: 'bold'}}>{name}</Text>
+                <Text style={{color:'#10b981', fontWeight: 'bold'}}>
+                  owes {getSymbol(masterCurrency)}{formatValue(amt)}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <Text style={{color: '#64748b', fontSize: 12}}>No split expenses recorded yet.</Text>
+          )}
+        </View>
+        <View style={{height: 100}} />
+      </ScrollView>
+    );
+  };
+
+  const renderFeatures = () => (
     <ScrollView style={{flex:1, padding: 20}}>
-      <Text style={styles.appTitle}>ANALYTICS 📊</Text>
+      <Text style={[styles.appTitle, {marginBottom: 20}]}>WHAT'S NEW 🚀</Text>
+      
+      <View style={[styles.summaryCard, {alignItems: 'center', marginBottom: 20, backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderWidth: 2, borderStyle: 'dashed'}]}>
+        <Text style={{fontSize: 40, marginBottom: 10}}>🖼️</Text>
+        {/* THE INFOGRAPHIC IMAGE */}
+      <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden' }]}>
+        <Image 
+          source={{ uri: 'https://github.com/Shitanshu1901/Travel-Expense-Tracker/blob/main/App%20Infographic.png' }} 
+          style={{ width: '100%', height: 400 }} 
+          resizeMode="contain"
+        />
+    </View>
+
       <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Spending by Category</Text>
-        {CATEGORIES.map(cat => {
-          const total = currentExpenses.filter(e => e.category.includes(cat)).reduce((s, e) => s + getConvertedAmount(e.amount_1, e.currency_1), 0);
-          const perc = totals.grand > 0 ? (total / totals.grand) * 100 : 0;
-          return (
-            <View key={cat} style={{marginBottom: 15}}>
-              <View style={styles.rowBetween}><Text style={{color:'#000'}}>{cat}</Text><Text style={{color:'#000'}}>{perc.toFixed(0)}%</Text></View>
-              <View style={styles.progressBarBg}><View style={[styles.progressBarFill, {width: `${perc}%`, backgroundColor: '#3b82f6'}]} /></View>
-            </View>
-          );
-        })}
+        <Text style={styles.summaryTitle}>🌍 Smart Currency Engine</Text>
+        <Text style={styles.featureListText}>• Real-Time Home Currency Switching</Text>
+        <Text style={styles.featureListText}>• Live Exchange Rates via API</Text>
+        <Text style={styles.featureListText}>• Historical Rate Tracking saved on cards</Text>
       </View>
+
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>👥 Split-Cost Management</Text>
+        <Text style={styles.featureListText}>• Multi-Person Splitting toggle</Text>
+        <Text style={styles.featureListText}>• Per-person share display on expenses</Text>
+        <Text style={styles.featureListText}>• "Who Owes Whom" settlement engine</Text>
+      </View>
+
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>📊 Analytics & Budgeting</Text>
+        <Text style={styles.featureListText}>• Optional Trip Budgeting limits</Text>
+        <Text style={styles.featureListText}>• Visual Budget Health Progress Bar</Text>
+        <Text style={styles.featureListText}>• Category Spending visual graphs</Text>
+      </View>
+
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>📝 Data & Reporting</Text>
+        <Text style={styles.featureListText}>• Double-verification for safe deletions</Text>
+        <Text style={styles.featureListText}>• Smart "Other" custom category input</Text>
+        <Text style={styles.featureListText}>• One-Tap PDF Export with detailed tables</Text>
+      </View>
+
+      <View style={{height: 100}} />
     </ScrollView>
   );
 
@@ -275,10 +354,22 @@ export default function App() {
           </View>
         </View></View>
       </Modal>
-      {currentTab === 'Home' ? renderHome() : renderCharts()}
+
+      {currentTab === 'Home' ? renderHome() : currentTab === 'Charts' ? renderCharts() : renderFeatures()}
+
       <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}><Text style={[styles.tabIcon, currentTab === 'Home' && styles.activeTab]}>🏠</Text><Text style={[styles.tabText, currentTab === 'Home' && styles.activeTab]}>Home</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Charts')}><Text style={[styles.tabIcon, currentTab === 'Charts' && styles.activeTab]}>📊</Text><Text style={[styles.tabText, currentTab === 'Charts' && styles.activeTab]}>Charts</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}>
+          <Text style={[styles.tabIcon, currentTab === 'Home' && styles.activeTab]}>🏠</Text>
+          <Text style={[styles.tabText, currentTab === 'Home' && styles.activeTab]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Charts')}>
+          <Text style={[styles.tabIcon, currentTab === 'Charts' && styles.activeTab]}>📊</Text>
+          <Text style={[styles.tabText, currentTab === 'Charts' && styles.activeTab]}>Charts</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Features')}>
+          <Text style={[styles.tabIcon, currentTab === 'Features' && styles.activeTab]}>✨</Text>
+          <Text style={[styles.tabText, currentTab === 'Features' && styles.activeTab]}>Features</Text>
+        </TouchableOpacity>
       </View>
       <View style={{height: Platform.OS === 'ios' ? 20 : 0, backgroundColor: '#fff'}} />
     </SafeAreaView>
@@ -324,9 +415,10 @@ const styles = StyleSheet.create({
   tabIcon: { fontSize: 22, color: '#94a3b8' },
   tabText: { fontSize: 10, color: '#94a3b8', fontWeight: 'bold' },
   activeTab: { color: '#3b82f6' },
-  summaryCard: { backgroundColor: '#fff', padding: 20, borderRadius: 20, elevation: 3 },
-  summaryTitle: { fontWeight: 'bold', marginBottom: 15, color: '#1e293b' },
+  summaryCard: { backgroundColor: '#fff', padding: 20, borderRadius: 20, elevation: 3, marginBottom: 15 },
+  summaryTitle: { fontWeight: 'bold', marginBottom: 15, color: '#1e293b', fontSize: 16 },
   legendText: { fontSize: 11, fontWeight: 'bold', color: '#1e293b' },
+  featureListText: { fontSize: 12, color: '#64748b', marginBottom: 6 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#fff', padding: 25, borderRadius: 25, width: '85%' },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
