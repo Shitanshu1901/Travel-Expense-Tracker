@@ -30,7 +30,7 @@ export default function App() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
   const [amount1, setAmount1] = useState('');
-  const [currency1, setCurrency1] = useState('VND');
+  const [currency1, setCurrency1] = useState('INR');
   const [paymentMethod, setPaymentMethod] = useState('Cash 💵');
   const [category, setCategory] = useState('🍔 Food');
   const [customCategory, setCustomCategory] = useState('');
@@ -98,13 +98,8 @@ export default function App() {
 
   const handleSaveExpense = () => {
     if (!amount1 || !description) return Alert.alert('Error', 'Fill all fields');
-    if (isSplit && !splitNames) return Alert.alert('Error', 'Enter names for split');
     const finalCat = category === "🎟️ Other" ? `🎟️ ${customCategory || 'Other'}` : category;
-    const exp = { 
-      id: editingId || Date.now().toString(), date, description, category: finalCat,
-      amount_1: parseFloat(amount1), currency_1: currency1, type: txType, 
-      method: paymentMethod, split: isSplit, splitNames 
-    };
+    const exp = { id: editingId || Date.now().toString(), date, description, category: finalCat, amount_1: parseFloat(amount1), currency_1: currency1, type: txType, method: paymentMethod, split: isSplit, splitNames };
     let updated = editingId ? currentExpenses.map(i => i.id === editingId ? exp : i) : [exp, ...currentExpenses];
     updated.sort((a, b) => new Date(b.date) - new Date(a.date));
     const t = { ...trips, [activeTrip]: updated };
@@ -116,35 +111,8 @@ export default function App() {
     setEditingId(item.id); setDate(item.date); setDescription(item.description); setAmount1(item.amount_1.toString());
     setCurrency1(item.currency_1); setPaymentMethod(item.method); setTxType(item.type || 'Debit');
     setIsSplit(item.split || false); setSplitNames(item.splitNames || '');
-    if (item.category.startsWith('🎟️') && !CATEGORIES.includes(item.category)) {
-      setCategory('🎟️ Other'); setCustomCategory(item.category.replace('🎟️ ', ''));
-    } else { setCategory(item.category); }
+    if (item.category.startsWith('🎟️') && !CATEGORIES.includes(item.category)) { setCategory('🎟️ Other'); setCustomCategory(item.category.replace('🎟️ ', '')); } else { setCategory(item.category); }
     scrollRef.current?.scrollTo({ y: 0, animated: true });
-  };
-
-  const deleteExpense = (id) => {
-    Alert.alert("Confirm Delete", "Delete this expense?", [
-      { text: "No" },
-      { text: "Yes", onPress: () => {
-          const u = currentExpenses.filter(e => e.id !== id);
-          const t = { ...trips, [activeTrip]: u };
-          setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets);
-      }}
-    ]);
-  };
-
-  const deleteFullTrip = () => {
-    Alert.alert("Delete Trip", `Delete all data for ${activeTrip}?`, [
-      { text: "No" },
-      { text: "Delete", style: 'destructive', onPress: () => {
-        const t = { ...trips }; delete t[activeTrip];
-        const b = { ...tripBudgets }; delete b[activeTrip];
-        const next = Object.keys(t)[0] || 'My First Trip';
-        if (!t[next]) t[next] = [];
-        setTrips(t); setTripBudgets(b); setActiveTrip(next);
-        saveData(t, next, masterCurrency, b);
-      }}
-    ]);
   };
 
   const sharePDF = async () => {
@@ -169,7 +137,7 @@ export default function App() {
         <View style={styles.row}>
           <View style={styles.tripPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={activeTrip} onValueChange={setActiveTrip}>{Object.keys(trips).map(t => <Picker.Item key={t} label={t} value={t} />)}</Picker></View>
           <TouchableOpacity style={styles.iconBtn} onPress={() => {setModalMode('rename'); setModalVisible(true)}}><Text>✏️</Text></TouchableOpacity>
-          <TouchableOpacity style={[styles.iconBtn, {backgroundColor: '#fee2e2'}]} onPress={deleteFullTrip}><Text>🗑️</Text></TouchableOpacity>
+          <TouchableOpacity style={[styles.iconBtn, {backgroundColor: '#fee2e2'}]} onPress={() => Alert.alert("Confirm", "Delete trip?", [{text:"No"},{text:"Yes",onPress:()=> {const t={...trips}; delete t[activeTrip]; const next=Object.keys(t)[0]||'My Trip'; setTrips(t); setActiveTrip(next); saveData(t,next,masterCurrency,tripBudgets);}}])}><Text>🗑️</Text></TouchableOpacity>
           <TouchableOpacity style={styles.plusBtn} onPress={() => {setModalMode('add'); setModalVisible(true)}}><Text style={styles.plusText}>+</Text></TouchableOpacity>
         </View>
         <View style={styles.summaryCardCompact}>
@@ -190,12 +158,11 @@ export default function App() {
           <TextInput style={[styles.input, {flex:1, color:'#000'}]} value={date} onChangeText={setDate} />
           <TouchableOpacity style={[styles.typeToggle, {backgroundColor: txType === 'Debit' ? '#fee2e2' : '#dcfce7'}]} onPress={() => setTxType(txType === 'Debit' ? 'Credit' : 'Debit')}><Text style={{color: txType === 'Debit' ? '#ef4444' : '#22c55e', fontWeight: 'bold'}}>{txType.toUpperCase()}</Text></TouchableOpacity>
         </View>
-        <TextInput style={[styles.input, {marginVertical: 10, color:'#000'}]} placeholder="Description" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
+        <TextInput style={[styles.input, {marginVertical: 10, color:'#000'}]} placeholder="Description" value={description} onChangeText={setDescription} />
         <View style={styles.row}>
           <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={category} onValueChange={setCategory}>{CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}</Picker></View>
-          <TextInput style={[styles.input, {flex: 1, color:'#000'}]} placeholder="Amount" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
+          <TextInput style={[styles.input, {flex: 1, color:'#000'}]} placeholder="Amount" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
         </View>
-        {category === "🎟️ Other" && <TextInput style={[styles.input, {marginTop: 10, color:'#000', borderColor:'#10b981', borderWidth:1}]} placeholder="Specify Other..." value={customCategory} onChangeText={setCustomCategory} />}
         <View style={[styles.row, {marginTop:10}]}>
           <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={currency1} onValueChange={setCurrency1}>{CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}</Picker></View>
           <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={paymentMethod} onValueChange={setPaymentMethod}>{PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}</Picker></View>
@@ -204,29 +171,17 @@ export default function App() {
           <Text style={{fontWeight:'bold', color:'#000'}}>Split with Friends?</Text>
           <TouchableOpacity onPress={() => setIsSplit(!isSplit)} style={[styles.splitToggle, isSplit && {backgroundColor: '#3b82f6'}]}><Text style={{color: isSplit ? '#fff' : '#000'}}>👥 {isSplit ? 'YES' : 'NO'}</Text></TouchableOpacity>
         </View>
-        {isSplit && <TextInput style={[styles.input, {marginTop: 10, color:'#000', borderColor: '#3b82f6', borderWidth: 1}]} placeholder="Names (e.g. Rahul, Amit)" value={splitNames} onChangeText={setSplitNames} />}
+        {isSplit && <TextInput style={[styles.input, {marginTop: 10, color:'#000', borderColor: '#3b82f6', borderWidth: 1}]} placeholder="Names (e.g. Ajay, Nikhil)" value={splitNames} onChangeText={setSplitNames} />}
         <TouchableOpacity style={styles.submitBtn} onPress={handleSaveExpense}><Text style={styles.btnText}>{editingId ? 'UPDATE EXPENSE' : '+ ADD ENTRY'}</Text></TouchableOpacity>
       </View>
 
       {currentExpenses.map(item => {
         const conv = getConvertedAmount(item.amount_1, item.currency_1);
         const rate = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(4) : "1.00";
-        const friendsCount = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
-        const share = conv / friendsCount;
-
         return (
           <TouchableOpacity key={item.id} style={styles.card} onPress={() => startEdit(item)}>
-            <View style={{flex: 1}}>
-              <Text style={styles.cardDate}>{item.date} • {item.method.split(' ')[0]}</Text>
-              <Text style={styles.cardDesc}>{item.description} ({item.category})</Text>
-              <Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text>
-              {item.split && <Text style={styles.splitSubText}>Share: {getSymbol(masterCurrency)}{formatValue(share)} per person (Total Split: {friendsCount})</Text>}
-            </View>
-            <View style={{alignItems: 'flex-end'}}>
-              <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text>
-              <Text style={{fontSize: 10, color: '#64748b'}}>{formatValue(item.amount_1)} {item.currency_1}</Text>
-              <TouchableOpacity onPress={() => deleteExpense(item.id)}><Text style={{color: 'red', fontWeight: 'bold', fontSize: 20}}>×</Text></TouchableOpacity>
-            </View>
+            <View style={{flex: 1}}><Text style={styles.cardDate}>{item.date} • {item.method.split(' ')[0]}</Text><Text style={styles.cardDesc}>{item.description} ({item.category})</Text><Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text></View>
+            <View style={{alignItems: 'flex-end'}}><Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text><TouchableOpacity onPress={() => Alert.alert("Confirm","Delete expense?",[{text:"No"},{text:"Yes",onPress:()=> {const u=currentExpenses.filter(e=>e.id!==item.id); const t={...trips,[activeTrip]:u}; setTrips(t); saveData(t,activeTrip,masterCurrency,tripBudgets);}}])}><Text style={{color:'red',fontSize:20}}>×</Text></TouchableOpacity></View>
           </TouchableOpacity>
         );
       })}
@@ -238,61 +193,55 @@ export default function App() {
   const renderCharts = () => {
     const settlements = {};
     currentExpenses.filter(e => e.split && e.splitNames).forEach(e => {
-      const friends = e.splitNames.split(',').map(n => n.trim()).filter(n => n);
-      if (friends.length > 0) {
-        const share = getConvertedAmount(e.amount_1, e.currency_1) / (friends.length + 1);
-        friends.forEach(f => {
-          settlements[f] = (settlements[f] || 0) + share;
-        });
-      }
+        const friends = e.splitNames.split(',').map(n => n.trim()).filter(n => n);
+        if (friends.length > 0) {
+            const share = getConvertedAmount(e.amount_1, e.currency_1) / (friends.length + 1);
+            friends.forEach(f => { settlements[f] = (settlements[f] || 0) + share; });
+        }
     });
-
     return (
-      <ScrollView style={{flex:1, padding: 20}}>
-        <Text style={styles.appTitle}>ANALYTICS 📊</Text>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Spending by Category</Text>
-          {CATEGORIES.map(cat => {
-            const total = currentExpenses.filter(e => e.category.includes(cat)).reduce((s, e) => s + getConvertedAmount(e.amount_1, e.currency_1), 0);
-            const perc = totals.grand > 0 ? (total / totals.grand) * 100 : 0;
-            return (
-              <View key={cat} style={{marginBottom: 15}}>
-                <View style={styles.rowBetween}><Text style={{color:'#000', fontWeight: 'bold'}}>{cat}</Text><Text style={{color:'#000'}}>{perc.toFixed(0)}%</Text></View>
-                <View style={styles.progressBarBg}><View style={[styles.progressBarFill, {width: `${perc}%`, backgroundColor: '#3b82f6'}]} /></View>
-              </View>
-            );
-          })}
-        </View>
-
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Who Owes You? 👥</Text>
-          {Object.keys(settlements).length > 0 ? (
-            Object.entries(settlements).map(([name, amt]) => (
-              <View key={name} style={[styles.rowBetween, {marginBottom: 10}]}>
-                <Text style={{color:'#000', fontWeight: 'bold'}}>{name}</Text>
-                <Text style={{color:'#10b981', fontWeight: 'bold'}}>
-                  owes {getSymbol(masterCurrency)}{formatValue(amt)}
-                </Text>
-              </View>
-            ))
-          ) : (
-            <Text style={{color: '#64748b', fontSize: 12}}>No split expenses recorded yet.</Text>
-          )}
-        </View>
-        <View style={{height: 100}} />
-      </ScrollView>
+        <ScrollView style={{flex:1, padding: 20}}>
+          <View style={{height: 30}} />
+          <Text style={styles.appTitle}>ANALYTICS 📊</Text>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>Spending by Category</Text>
+            {CATEGORIES.map(cat => {
+              const total = currentExpenses.filter(e => e.category.includes(cat)).reduce((s, e) => s + getConvertedAmount(e.amount_1, e.currency_1), 0);
+              const perc = totals.grand > 0 ? (total / totals.grand) * 100 : 0;
+              return (
+                <View key={cat} style={{marginBottom: 15}}><View style={styles.rowBetween}><Text style={{color:'#000',fontWeight:'bold'}}>{cat}</Text><Text style={{color:'#000'}}>{perc.toFixed(0)}%</Text></View><View style={styles.progressBarBg}><View style={[styles.progressBarFill, {width: `${perc}%`, backgroundColor: '#3b82f6'}]} /></View></View>
+              );
+            })}
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>Who Owes You? 👥</Text>
+            {Object.keys(settlements).length > 0 ? Object.entries(settlements).map(([n, a]) => (<View key={n} style={styles.rowBetween}><Text style={{color:'#000',fontWeight:'bold'}}>{n}</Text><Text style={{color:'#10b981',fontWeight:'bold'}}>owes {getSymbol(masterCurrency)}{formatValue(a)}</Text></View>)) : <Text style={{color:'#64748b',fontSize:12}}>No split expenses recorded yet.</Text>}
+          </View>
+          <View style={{height: 100}} />
+        </ScrollView>
     );
   };
 
   const renderFeatures = () => (
     <ScrollView style={{flex:1, padding: 20}}>
-      <Text style={[styles.appTitle, {marginBottom: 20, color: '#000'}]}>WHAT'S NEW 🚀</Text>
+      <View style={{height: 40}} />
+      <Text style={[styles.appTitle, {marginBottom: 10}]}>WHAT'S NEW 🚀</Text>
       
-      <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden' }]}>
+      {/* APP INFO CARD */}
+      <View style={[styles.summaryCard, {backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderWidth: 1}]}>
+        <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 16, marginBottom: 5}}>Travel Expense Tracker v1.0</Text>
+        <Text style={{fontSize: 13, color: '#475569', lineHeight: 18, marginBottom: 10}}>A professional tool built to manage international spending, split costs with friends, and monitor budgets in real-time.</Text>
+        <View style={{height: 1, backgroundColor: '#c7d2fe', marginBottom: 10}} />
+        <Text style={{fontWeight: 'bold', color: '#3b82f6', fontSize: 11}}>DESIGNED & DEVELOPED BY:</Text>
+        <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 15, marginTop: 2}}>Shitanshu Chokshi</Text>
+      </View>
+
+      {/* INFOGRAPHIC IMAGE CONTAINER */}
+      <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden', height: 400, backgroundColor: '#f1f5f9' }]}>
         <Image 
           source={{ uri: 'https://github.com/Shitanshu1901/Travel-Expense-Tracker/blob/main/App%20Infographic.png' }} 
-          style={{ width: '100%', height: 400 }} 
-          resizeMode="contain"
+          style={{ width: '100%', height: '100%' }} 
+          resizeMode="cover"
         />
       </View>
 
@@ -317,60 +266,35 @@ export default function App() {
         <Text style={styles.featureListText}>• Category Spending visual graphs</Text>
       </View>
 
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>📝 Data & Reporting</Text>
-        <Text style={styles.featureListText}>• Double-verification for safe deletions</Text>
-        <Text style={styles.featureListText}>• Smart "Other" custom category input</Text>
-        <Text style={styles.featureListText}>• One-Tap PDF Export with detailed tables</Text>
-      </View>
-
-      <View style={{height: 100}} />
+      <View style={{height: 120}} />
     </ScrollView>
   );
 
   return (
     <SafeAreaView style={styles.container}>
-      <Modal visible={modalVisible} transparent animationType="slide">
+      <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
           <Text style={styles.modalTitle}>{modalMode === 'add' ? 'New Trip' : 'Edit Trip'}</Text>
-          <TextInput style={[styles.modalInput, {color:'#000'}]} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name" placeholderTextColor="#94a3b8" />
-          <TextInput style={[styles.modalInput, {color:'#000'}]} value={newTripBudget} onChangeText={setNewTripBudget} placeholder="Budget (Optional)" keyboardType="numeric" placeholderTextColor="#94a3b8" />
-          <View style={styles.row}>
-            <TouchableOpacity style={[styles.modalBtn, {backgroundColor:'#ccc'}]} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => {
-                 if (!newTripName) return; const t = { ...trips }; const b = { ...tripBudgets };
-                 if (modalMode === 'add') { t[newTripName] = []; b[newTripName] = parseFloat(newTripBudget) || 0; setActiveTrip(newTripName); }
-                 else { t[newTripName] = t[activeTrip]; b[newTripName] = parseFloat(newTripBudget) || 0; if (newTripName !== activeTrip) { delete t[activeTrip]; delete b[activeTrip]; } setActiveTrip(newTripName); }
-                 setTrips(t); setTripBudgets(b); saveData(t, newTripName, masterCurrency, b); setModalVisible(false);
-            }}><Text style={{color:'#fff'}}>Save</Text></TouchableOpacity>
-          </View>
+          <TextInput style={[styles.modalInput, {color:'#000'}]} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name" />
+          <TextInput style={[styles.modalInput, {color:'#000'}]} value={newTripBudget} onChangeText={setNewTripBudget} placeholder="Budget (Optional)" keyboardType="numeric" />
+          <View style={styles.row}><TouchableOpacity style={[styles.modalBtn, {backgroundColor:'#ccc'}]} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity><TouchableOpacity style={styles.modalBtn} onPress={() => { if (!newTripName) return; const t = { ...trips }; const b = { ...tripBudgets }; if (modalMode === 'add') { t[newTripName] = []; b[newTripName] = parseFloat(newTripBudget) || 0; setActiveTrip(newTripName); } else { t[newTripName] = t[activeTrip]; b[newTripName] = parseFloat(newTripBudget) || 0; if (newTripName !== activeTrip) { delete t[activeTrip]; delete b[activeTrip]; } setActiveTrip(newTripName); } setTrips(t); setTripBudgets(b); saveData(t, newTripName, masterCurrency, b); setModalVisible(false); }}><Text style={{color:'#fff'}}>Save</Text></TouchableOpacity></View>
         </View></View>
       </Modal>
 
       {currentTab === 'Home' ? renderHome() : currentTab === 'Charts' ? renderCharts() : renderFeatures()}
 
       <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}>
-          <Text style={[styles.tabIcon, currentTab === 'Home' && styles.activeTab]}>🏠</Text>
-          <Text style={[styles.tabText, currentTab === 'Home' && styles.activeTab]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Charts')}>
-          <Text style={[styles.tabIcon, currentTab === 'Charts' && styles.activeTab]}>📊</Text>
-          <Text style={[styles.tabText, currentTab === 'Charts' && styles.activeTab]}>Charts</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Features')}>
-          <Text style={[styles.tabIcon, currentTab === 'Features' && styles.activeTab]}>✨</Text>
-          <Text style={[styles.tabText, currentTab === 'Features' && styles.activeTab]}>Features</Text>
-        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}><Text style={[styles.tabIcon, currentTab === 'Home' && styles.activeTab]}>🏠</Text><Text style={[styles.tabText, currentTab === 'Home' && styles.activeTab]}>Home</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Charts')}><Text style={[styles.tabIcon, currentTab === 'Charts' && styles.activeTab]}>📊</Text><Text style={[styles.tabText, currentTab === 'Charts' && styles.activeTab]}>Charts</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Features')}><Text style={[styles.tabIcon, currentTab === 'Features' && styles.activeTab]}>✨</Text><Text style={[styles.tabText, currentTab === 'Features' && styles.activeTab]}>Features</Text></TouchableOpacity>
       </View>
-      <View style={{height: Platform.OS === 'ios' ? 20 : 0, backgroundColor: '#fff'}} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { padding: 20, paddingTop: 40, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  header: { padding: 20, paddingTop: 45, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
   appTitle: { fontSize: 20, fontWeight: '900', color: '#1e293b', textAlign: 'center' },
   homeCurrencyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 10 },
   currencyPickerWrapper: { width: 140, backgroundColor: '#f1f5f9', borderRadius: 10, height: 40, justifyContent: 'center' },
@@ -388,7 +312,7 @@ const styles = StyleSheet.create({
   iconBtn: { backgroundColor: '#f1f5f9', width: 45, height: 45, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   plusBtn: { backgroundColor: '#10b981', width: 45, height: 45, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   plusText: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
-  inputCard: { backgroundColor: '#fff', margin: 15, padding: 15, borderRadius: 20, elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
+  inputCard: { backgroundColor: '#fff', margin: 15, padding: 15, borderRadius: 20, elevation: 5 },
   input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 12, color: '#000' },
   halfPicker: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center', marginRight: 5 },
   typeToggle: { paddingHorizontal: 15, height: 45, borderRadius: 12, justifyContent: 'center', marginLeft: 10 },
@@ -401,15 +325,13 @@ const styles = StyleSheet.create({
   cardDesc: { fontWeight: 'bold', fontSize: 14, color: '#1e293b' },
   cardAmt: { fontWeight: 'bold', fontSize: 16 },
   rateText: { fontSize: 10, color: '#10b981', fontWeight: 'bold', marginTop: 4 },
-  splitSubText: { fontSize: 10, color: '#3b82f6', marginTop: 2, fontStyle: 'italic' },
-  tabBar: { flexDirection: 'row', backgroundColor: '#fff', height: 80, borderTopWidth: 1, borderColor: '#e2e8f0', paddingBottom: 25 },
+  tabBar: { flexDirection: 'row', backgroundColor: '#fff', height: 95, borderTopWidth: 1, borderColor: '#e2e8f0', paddingBottom: 40 },
   tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   tabIcon: { fontSize: 22, color: '#94a3b8' },
   tabText: { fontSize: 10, color: '#94a3b8', fontWeight: 'bold' },
   activeTab: { color: '#3b82f6' },
   summaryCard: { backgroundColor: '#fff', padding: 20, borderRadius: 20, elevation: 3, marginBottom: 15 },
   summaryTitle: { fontWeight: 'bold', marginBottom: 15, color: '#1e293b', fontSize: 16 },
-  legendText: { fontSize: 11, fontWeight: 'bold', color: '#1e293b' },
   featureListText: { fontSize: 12, color: '#64748b', marginBottom: 6 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#fff', padding: 25, borderRadius: 25, width: '85%' },
