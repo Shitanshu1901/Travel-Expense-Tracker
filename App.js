@@ -248,8 +248,7 @@ export default function App() {
         <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 15, marginTop: 2}}>Shitanshu Chokshi</Text>
       </View>
       <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden', height: 400, backgroundColor: '#f1f5f9' }]}>
-        <Image source={{ uri: 'https://github.com/Shitanshu1901/Travel-Expense-Tracker/blob/3a493f3497b541241ce16de155d3d4ff18444bff/App%20Infographic.png' }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-      </View>
+<Image source={{ uri: 'https://raw.githubusercontent.com/Shitanshu1901/Travel-Expense-Tracker/main/App%20Infographic.png' }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />      </View>
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>🌍 Smart Currency Engine</Text>
         <Text style={styles.featureListText}>• Real-Time Home Currency Switching</Text>
