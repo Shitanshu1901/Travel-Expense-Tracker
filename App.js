@@ -30,7 +30,7 @@ export default function App() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
   const [amount1, setAmount1] = useState('');
-  const [currency1, setCurrency1] = useState('INR');
+  const [currency1, setCurrency1] = useState('VND');
   const [paymentMethod, setPaymentMethod] = useState('Cash 💵');
   const [category, setCategory] = useState('🍔 Food');
   const [customCategory, setCustomCategory] = useState('');
@@ -98,6 +98,7 @@ export default function App() {
 
   const handleSaveExpense = () => {
     if (!amount1 || !description) return Alert.alert('Error', 'Fill all fields');
+    if (isSplit && !splitNames) return Alert.alert('Error', 'Enter names for split');
     const finalCat = category === "🎟️ Other" ? `🎟️ ${customCategory || 'Other'}` : category;
     const exp = { id: editingId || Date.now().toString(), date, description, category: finalCat, amount_1: parseFloat(amount1), currency_1: currency1, type: txType, method: paymentMethod, split: isSplit, splitNames };
     let updated = editingId ? currentExpenses.map(i => i.id === editingId ? exp : i) : [exp, ...currentExpenses];
@@ -178,10 +179,23 @@ export default function App() {
       {currentExpenses.map(item => {
         const conv = getConvertedAmount(item.amount_1, item.currency_1);
         const rate = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(4) : "1.00";
+        // SPLIT SHARE LOGIC RESTORED FOR HOME CARDS
+        const friendsCount = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
+        const share = conv / friendsCount;
+
         return (
           <TouchableOpacity key={item.id} style={styles.card} onPress={() => startEdit(item)}>
-            <View style={{flex: 1}}><Text style={styles.cardDate}>{item.date} • {item.method.split(' ')[0]}</Text><Text style={styles.cardDesc}>{item.description} ({item.category})</Text><Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text></View>
-            <View style={{alignItems: 'flex-end'}}><Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text><TouchableOpacity onPress={() => Alert.alert("Confirm","Delete expense?",[{text:"No"},{text:"Yes",onPress:()=> {const u=currentExpenses.filter(e=>e.id!==item.id); const t={...trips,[activeTrip]:u}; setTrips(t); saveData(t,activeTrip,masterCurrency,tripBudgets);}}])}><Text style={{color:'red',fontSize:20}}>×</Text></TouchableOpacity></View>
+            <View style={{flex: 1}}>
+                <Text style={styles.cardDate}>{item.date} • {item.method.split(' ')[0]}</Text>
+                <Text style={styles.cardDesc}>{item.description} ({item.category})</Text>
+                <Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text>
+                {/* RESTORED SPLIT DISPLAY BELOW */}
+                {item.split && <Text style={styles.splitSubText}>Share: {getSymbol(masterCurrency)}{formatValue(share)} per person (Total Split: {friendsCount})</Text>}
+            </View>
+            <View style={{alignItems: 'flex-end'}}>
+                <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text>
+                <TouchableOpacity onPress={() => Alert.alert("Confirm","Delete expense?",[{text:"No"},{text:"Yes",onPress:()=> {const u=currentExpenses.filter(e=>e.id!==item.id); const t={...trips,[activeTrip]:u}; setTrips(t); saveData(t,activeTrip,masterCurrency,tripBudgets);}}])}><Text style={{color:'red',fontSize:20}}>×</Text></TouchableOpacity>
+            </View>
           </TouchableOpacity>
         );
       })}
@@ -226,46 +240,47 @@ export default function App() {
     <ScrollView style={{flex:1, padding: 20}}>
       <View style={{height: 40}} />
       <Text style={[styles.appTitle, {marginBottom: 10}]}>WHAT'S NEW 🚀</Text>
-      
-      {/* APP INFO CARD */}
       <View style={[styles.summaryCard, {backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderWidth: 1}]}>
-        <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 16, marginBottom: 5}}>Travel Expense Tracker v1.0</Text>
+        <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 16, marginBottom: 5}}>Travel Expense Tracker</Text>
         <Text style={{fontSize: 13, color: '#475569', lineHeight: 18, marginBottom: 10}}>A professional tool built to manage international spending, split costs with friends, and monitor budgets in real-time.</Text>
         <View style={{height: 1, backgroundColor: '#c7d2fe', marginBottom: 10}} />
         <Text style={{fontWeight: 'bold', color: '#3b82f6', fontSize: 11}}>DESIGNED & DEVELOPED BY:</Text>
         <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 15, marginTop: 2}}>Shitanshu Chokshi</Text>
       </View>
-
-      {/* INFOGRAPHIC IMAGE CONTAINER */}
       <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden', height: 400, backgroundColor: '#f1f5f9' }]}>
-        <Image 
-          source={{ uri: 'https://github.com/Shitanshu1901/Travel-Expense-Tracker/blob/main/App%20Infographic.png' }} 
-          style={{ width: '100%', height: '100%' }} 
-          resizeMode="cover"
-        />
+        <Image source={{ uri: 'https://github.com/Shitanshu1901/Travel-Expense-Tracker/blob/3a493f3497b541241ce16de155d3d4ff18444bff/App%20Infographic.png' }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
       </View>
-
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>🌍 Smart Currency Engine</Text>
         <Text style={styles.featureListText}>• Real-Time Home Currency Switching</Text>
         <Text style={styles.featureListText}>• Live Exchange Rates via API</Text>
         <Text style={styles.featureListText}>• Historical Rate Tracking saved on cards</Text>
+        <Text style={styles.featureListText}>• Dual Visibility of rates</Text>
       </View>
-
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>👥 Split-Cost Management</Text>
         <Text style={styles.featureListText}>• Multi-Person Splitting toggle</Text>
         <Text style={styles.featureListText}>• Per-person share display on expenses</Text>
         <Text style={styles.featureListText}>• "Who Owes Whom" settlement engine</Text>
       </View>
-
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>📊 Analytics & Budgeting</Text>
         <Text style={styles.featureListText}>• Optional Trip Budgeting limits</Text>
         <Text style={styles.featureListText}>• Visual Budget Health Progress Bar</Text>
         <Text style={styles.featureListText}>• Category Spending visual graphs</Text>
       </View>
-
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>📝 Seamless Data Management</Text>
+        <Text style={styles.featureListText}>• Quick-Edit on any entry to instantly "scroll-to-top" to edit </Text>
+        <Text style={styles.featureListText}>• Double-Verification Security of Deletion of data</Text>
+        <Text style={styles.featureListText}>• Multi-Trip Storage</Text>
+        <Text style={styles.featureListText}>• Intelligent "Other" Category for custom edits</Text>
+      </View>
+     <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>📤 Professional Reporting</Text>
+        <Text style={styles.featureListText}>• One-Tap PDF Export</Text>
+        <Text style={styles.featureListText}>• Detailed Documentation when exported</Text>
+      </View>
       <View style={{height: 120}} />
     </ScrollView>
   );
@@ -280,9 +295,7 @@ export default function App() {
           <View style={styles.row}><TouchableOpacity style={[styles.modalBtn, {backgroundColor:'#ccc'}]} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity><TouchableOpacity style={styles.modalBtn} onPress={() => { if (!newTripName) return; const t = { ...trips }; const b = { ...tripBudgets }; if (modalMode === 'add') { t[newTripName] = []; b[newTripName] = parseFloat(newTripBudget) || 0; setActiveTrip(newTripName); } else { t[newTripName] = t[activeTrip]; b[newTripName] = parseFloat(newTripBudget) || 0; if (newTripName !== activeTrip) { delete t[activeTrip]; delete b[activeTrip]; } setActiveTrip(newTripName); } setTrips(t); setTripBudgets(b); saveData(t, newTripName, masterCurrency, b); setModalVisible(false); }}><Text style={{color:'#fff'}}>Save</Text></TouchableOpacity></View>
         </View></View>
       </Modal>
-
       {currentTab === 'Home' ? renderHome() : currentTab === 'Charts' ? renderCharts() : renderFeatures()}
-
       <View style={styles.tabBar}>
         <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}><Text style={[styles.tabIcon, currentTab === 'Home' && styles.activeTab]}>🏠</Text><Text style={[styles.tabText, currentTab === 'Home' && styles.activeTab]}>Home</Text></TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Charts')}><Text style={[styles.tabIcon, currentTab === 'Charts' && styles.activeTab]}>📊</Text><Text style={[styles.tabText, currentTab === 'Charts' && styles.activeTab]}>Charts</Text></TouchableOpacity>
@@ -325,6 +338,7 @@ const styles = StyleSheet.create({
   cardDesc: { fontWeight: 'bold', fontSize: 14, color: '#1e293b' },
   cardAmt: { fontWeight: 'bold', fontSize: 16 },
   rateText: { fontSize: 10, color: '#10b981', fontWeight: 'bold', marginTop: 4 },
+  splitSubText: { fontSize: 10, color: '#3b82f6', marginTop: 2, fontStyle: 'italic' },
   tabBar: { flexDirection: 'row', backgroundColor: '#fff', height: 95, borderTopWidth: 1, borderColor: '#e2e8f0', paddingBottom: 40 },
   tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   tabIcon: { fontSize: 22, color: '#94a3b8' },
