@@ -247,9 +247,15 @@ export default function App() {
         <Text style={{fontWeight: 'bold', color: '#3b82f6', fontSize: 11}}>DESIGNED & DEVELOPED BY:</Text>
         <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 15, marginTop: 2}}>Shitanshu Chokshi</Text>
       </View>
-      <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden', height: 400, backgroundColor: '#f1f5f9' }]}>
-<Image source={{ uri: 'https://raw.githubusercontent.com/Shitanshu1901/Travel-Expense-Tracker/main/App%20Infographic.png' }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />      </View>
-      <View style={styles.summaryCard}>
+    {/* INFOGRAPHIC IMAGE CONTAINER - OPTIMIZED FOR 2816x1536 */}
+      <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden', backgroundColor: '#f1f5f9' }]}>
+        <Image 
+          source={{ uri: 'https://raw.githubusercontent.com/shitanshuchokshi/My-App/main/infographic.png' }} 
+          style={{ width: '100%', aspectRatio: 2816 / 1536 }} 
+          resizeMode="contain" 
+        />
+      </View>   
+    <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>🌍 Smart Currency Engine</Text>
         <Text style={styles.featureListText}>• Real-Time Home Currency Switching</Text>
         <Text style={styles.featureListText}>• Live Exchange Rates via API</Text>
