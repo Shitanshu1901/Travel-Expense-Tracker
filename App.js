@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, Keyboard, ScrollView, Modal, Platform, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, Keyboard, ScrollView, Modal, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -27,7 +27,6 @@ export default function App() {
   const [masterCurrency, setMasterCurrency] = useState('');
   const [rates, setRates] = useState({});
   
-  // Inputs
   const [editingId, setEditingId] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateObj, setDateObj] = useState(new Date());
@@ -111,7 +110,7 @@ export default function App() {
 
   const sharePDF = async () => {
     const symbol = getSymbol(masterCurrency);
-    const html = `<html><body style="font-family:sans-serif;padding:20px;"><h1 style="text-align:center;">${activeTrip} Report</h1><div style="background:#f1f5f9; padding:15px; border-radius:10px; margin-bottom:20px;"><p><strong>Full Bill Total:</strong> ${symbol}${formatValue(totals.grand)}</p><p style="color:#10b981;"><strong>Total Your Share:</strong> ${symbol}${formatValue(totals.yourShare)}</p></div><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#3b82f6; color:#fff;"><th>Date</th><th>Description</th><th>Split With</th><th>Full Amt</th><th>Your Share</th></tr></thead><tbody>${currentExpenses.map(e => { const conv = getConvertedAmount(e.amount_1, e.currency_1); const sf = e.split && e.splitNames ? e.splitNames.split(',').length + 1 : 1; return `<tr><td style="border:1px solid #ddd;padding:8px;">${e.date}</td><td style="border:1px solid #ddd;padding:8px;">${e.description} (${e.category})</td><td style="border:1px solid #ddd;padding:8px;">${e.split ? e.splitNames : 'No'}</td><td style="border:1px solid #ddd;padding:8px;">${formatValue(e.amount_1)} ${e.currency_1}</td><td style="border:1px solid #ddd;padding:8px; font-weight:bold;">${symbol}${formatValue(conv/sf)}</td></tr>`}).join('')}</tbody></table></body></html>`;
+    const html = `<html><body style="font-family:sans-serif;padding:20px;"><h1 style="text-align:center;">${activeTrip} Report</h1><div style="background:#f1f5f9; padding:15px; border-radius:10px; margin-bottom:20px;"><p><strong>Full Bill Total:</strong> ${symbol}${formatValue(totals.grand)}</p><p style="color:#10b981;"><strong>Total Your Share:</strong> ${symbol}${formatValue(totals.yourShare)}</p></div><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#3b82f6; color:#fff;"><th>Date</th><th>Description</th><th>Full Amt</th><th>Your Share</th></tr></thead><tbody>${currentExpenses.map(e => `<tr><td style="border:1px solid #ddd;padding:8px;">${e.date}</td><td style="border:1px solid #ddd;padding:8px;">${e.description} (${e.category})</td><td style="border:1px solid #ddd;padding:8px;">${formatValue(e.amount_1)} ${e.currency_1}</td><td style="border:1px solid #ddd;padding:8px; font-weight:bold;">${symbol}${formatValue(getConvertedAmount(e.amount_1, e.currency_1) / (e.split ? e.splitNames.split(',').length + 1 : 1))}</td></tr>`).join('')}</tbody></table></body></html>`;
     const { uri } = await Print.printToFileAsync({ html });
     await Sharing.shareAsync(uri);
   };
@@ -145,15 +144,15 @@ export default function App() {
         <TextInput style={[styles.input, {marginVertical: 10, color:'#000'}]} placeholder="Add Description Here" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
         
         <View style={styles.row}>
-          <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={category} onValueChange={setCategory}><Picker.Item label="Select your Category" value="" />{CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}</Picker></View>
+          <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={category} onValueChange={setCategory}><Picker.Item label="Select Category" value="" />{CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}</Picker></View>
           <TextInput style={[styles.input, {flex: 1, color:'#000'}]} placeholder="Add Amount Here" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
         </View>
 
         {category === "🎟️ Other" && (<TextInput style={[styles.input, {marginTop: 10, borderColor:'#10b981', borderWidth:1, color:'#000'}]} placeholder="Describe other category..." placeholderTextColor="#94a3b8" value={customCategory} onChangeText={setCustomCategory} />)}
 
         <View style={[styles.row, {marginTop:10}]}>
-          <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={currency1} onValueChange={setCurrency1}><Picker.Item label="Select Your Currency" value="" />{CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}</Picker></View>
-          <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={paymentMethod} onValueChange={setPaymentMethod}><Picker.Item label="Select Mode of Payment" value="" />{PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}</Picker></View>
+          <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={currency1} onValueChange={setCurrency1}><Picker.Item label="Select Currency" value="" />{CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}</Picker></View>
+          <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={paymentMethod} onValueChange={setPaymentMethod}><Picker.Item label="Mode of Payment" value="" />{PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}</Picker></View>
         </View>
 
         <View style={[styles.rowBetween, {marginTop: 10}]}>
@@ -179,6 +178,77 @@ export default function App() {
     </ScrollView>
   );
 
+  const renderCharts = () => {
+    const settlements = {};
+    currentExpenses.filter(e => e.split && e.splitNames).forEach(e => {
+        const friends = e.splitNames.split(',').map(n => n.trim()).filter(n => n);
+        if (friends.length > 0) {
+            const share = getConvertedAmount(e.amount_1, e.currency_1) / (friends.length + 1);
+            friends.forEach(f => { settlements[f] = (settlements[f] || 0) + share; });
+        }
+    });
+    return (
+        <ScrollView style={{flex:1, padding: 20}}>
+          <View style={{height: 40}} />
+          <Text style={styles.appTitle}>ANALYTICS 📊</Text>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>Spending by Category</Text>
+            {CATEGORIES.map(cat => {
+              const total = currentExpenses.filter(e => e.category.includes(cat)).reduce((s, e) => s + getConvertedAmount(e.amount_1, e.currency_1), 0);
+              const perc = totals.grand > 0 ? (total / totals.grand) * 100 : 0;
+              return (
+                <View key={cat} style={{marginBottom: 15}}><View style={styles.rowBetween}><Text style={{color:'#000',fontWeight:'bold'}}>{cat}</Text><Text style={{color:'#000'}}>{perc.toFixed(0)}%</Text></View><View style={styles.progressBarBg}><View style={[styles.progressBarFill, {width: `${perc}%`, backgroundColor: '#3b82f6'}]} /></View></View>
+              );
+            })}
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>Who Owes You? 👥</Text>
+            {Object.keys(settlements).length > 0 ? Object.entries(settlements).map(([n, a]) => (<View key={n} style={styles.rowBetween}><Text style={{color:'#000',fontWeight:'bold'}}>{n}</Text><Text style={{color:'#10b981',fontWeight:'bold'}}>owes {getSymbol(masterCurrency)}{formatValue(a)}</Text></View>)) : <Text style={{color:'#64748b',fontSize:12}}>No split expenses recorded yet.</Text>}
+          </View>
+          <View style={{height: 100}} />
+        </ScrollView>
+    );
+  };
+
+  const renderFeatures = () => (
+    <ScrollView style={{flex:1, padding: 20}}>
+      <View style={{height: 40}} />
+      <Text style={[styles.appTitle, {marginBottom: 10}]}>WHAT'S NEW 🚀</Text>
+      <View style={[styles.summaryCard, {backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderWidth: 1}]}>
+        <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 16, marginBottom: 5}}>Travel Expense Tracker</Text>
+        <Text style={{fontSize: 13, color: '#475569', lineHeight: 18, marginBottom: 10}}>A professional tool built to manage international spending, split costs with friends, and monitor budgets in real-time.</Text>
+        <View style={{height: 1, backgroundColor: '#c7d2fe', marginBottom: 10}} />
+        <Text style={{fontWeight: 'bold', color: '#3b82f6', fontSize: 11}}>DESIGNED & DEVELOPED BY:</Text>
+        <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 15, marginTop: 2}}>Shitanshu Chokshi</Text>
+      </View>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>🌍 Smart Currency Engine</Text>
+        <Text style={styles.featureListText}>• Real-Time Home Currency Switching</Text>
+        <Text style={styles.featureListText}>• Live Exchange Rates via API</Text>
+        <Text style={styles.featureListText}>• Historical Rate Tracking saved on cards</Text>
+        <Text style={styles.featureListText}>• Dual Visibility of rates</Text>
+      </View>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>👥 Split-Cost Management</Text>
+        <Text style={styles.featureListText}>• Multi-Person Splitting toggle</Text>
+        <Text style={styles.featureListText}>• Per-person share display on expenses</Text>
+        <Text style={styles.featureListText}>• "Who Owes Whom" settlement engine</Text>
+      </View>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>📊 Analytics & Budgeting</Text>
+        <Text style={styles.featureListText}>• Optional Trip Budgeting limits</Text>
+        <Text style={styles.featureListText}>• Visual Budget Health Progress Bar</Text>
+        <Text style={styles.featureListText}>• Category Spending visual graphs</Text>
+      </View>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>📤 Professional Reporting</Text>
+        <Text style={styles.featureListText}>• One-Tap PDF Export</Text>
+        <Text style={styles.featureListText}>• Detailed Documentation when exported</Text>
+      </View>
+      <View style={{height: 120}} />
+    </ScrollView>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <Modal visible={modalVisible} transparent animationType="fade">
@@ -188,16 +258,11 @@ export default function App() {
           <View style={styles.row}><TouchableOpacity style={[styles.modalBtn, {backgroundColor:'#ccc'}]} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity><TouchableOpacity style={styles.modalBtn} onPress={() => { if(!newTripName) return; const t = {...trips, [newTripName]: []}; setTrips(t); setActiveTrip(newTripName); saveData(t, newTripName, masterCurrency, tripBudgets); setModalVisible(false); }}><Text style={{color:'#fff'}}>Save</Text></TouchableOpacity></View>
         </View></View>
       </Modal>
-      {currentTab === 'Home' ? renderHome() : (
-        <ScrollView style={{flex:1, padding: 20}}>
-            <View style={{height: 40}} /><Text style={styles.appTitle}>FEATURES 🚀</Text>
-            <View style={[styles.summaryCard, {backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderWidth: 1}]}><Text style={{fontWeight: '900', color: '#1e293b', fontSize: 16}}>Travel Expense Tracker v1.1</Text><Text style={{fontSize: 13, color: '#475569', marginTop: 5}}>Designed & Developed by Shitanshu Chokshi</Text></View>
-            <View style={styles.summaryCard}><Text style={styles.summaryTitle}>🌍 Smart Engine</Text><Text style={styles.featureListText}>• Live Currency & PDF Exporting</Text></View>
-        </ScrollView>
-      )}
+      {currentTab === 'Home' ? renderHome() : currentTab === 'Charts' ? renderCharts() : renderFeatures()}
       <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}><Text style={styles.tabIcon}>🏠</Text><Text style={styles.tabText}>Home</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Features')}><Text style={styles.tabIcon}>✨</Text><Text style={styles.tabText}>Features</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}><Text style={[styles.tabIcon, currentTab === 'Home' && styles.activeTab]}>🏠</Text><Text style={[styles.tabText, currentTab === 'Home' && styles.activeTab]}>Home</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Charts')}><Text style={[styles.tabIcon, currentTab === 'Charts' && styles.activeTab]}>📊</Text><Text style={[styles.tabText, currentTab === 'Charts' && styles.activeTab]}>Charts</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Features')}><Text style={[styles.tabIcon, currentTab === 'Features' && styles.activeTab]}>✨</Text><Text style={[styles.tabText, currentTab === 'Features' && styles.activeTab]}>Features</Text></TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -231,11 +296,14 @@ const styles = StyleSheet.create({
   splitSubText: { fontSize: 10, color: '#3b82f6', fontStyle: 'italic' },
   tabBar: { flexDirection: 'row', backgroundColor: '#fff', height: 95, borderTopWidth: 1, borderColor: '#e2e8f0', paddingBottom: 40 },
   tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  tabIcon: { fontSize: 22 },
+  tabIcon: { fontSize: 22, color: '#94a3b8' },
   tabText: { fontSize: 10, fontWeight: 'bold', color: '#64748b' },
+  activeTab: { color: '#3b82f6' },
   summaryCard: { backgroundColor: '#fff', padding: 20, borderRadius: 20, elevation: 3, marginBottom: 15 },
   summaryTitle: { fontWeight: 'bold', marginBottom: 15, color: '#1e293b', fontSize: 16 },
   featureListText: { fontSize: 12, color: '#64748b', marginBottom: 6 },
+  progressBarBg: { height: 10, backgroundColor: '#e2e8f0', borderRadius: 5, overflow: 'hidden' },
+  progressBarFill: { height: '100%' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#fff', padding: 25, borderRadius: 25, width: '85%' },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#000' },
