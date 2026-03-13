@@ -83,14 +83,18 @@ export default function App() {
   const getSymbol = (code) => CURRENCIES.find(c => c.value === code)?.symbol || "";
 
   const totals = useMemo(() => {
-    let cash = 0, nonCash = 0;
+    let cash = 0, nonCash = 0, yourShareTotal = 0;
     currentExpenses.forEach(e => {
       const amt = getConvertedAmount(e.amount_1, e.currency_1);
       const factor = e.type === 'Credit' ? -1 : 1;
+      const splitFactor = e.split && e.splitNames ? e.splitNames.split(',').length + 1 : 1;
+      
       if (e.method === 'Cash 💵') cash += (amt * factor);
       else nonCash += (amt * factor);
+      
+      yourShareTotal += ((amt / splitFactor) * factor);
     });
-    return { cash, nonCash, grand: cash + nonCash };
+    return { cash, nonCash, grand: cash + nonCash, yourShare: yourShareTotal };
   }, [currentExpenses, getConvertedAmount]);
 
   const handleSaveExpense = () => {
@@ -110,9 +114,48 @@ export default function App() {
     const t = { ...trips, [activeTrip]: updated };
     setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets);
     
-    // Reset to "Blank" state
     setEditingId(null); setAmount1(''); setDescription(''); setIsSplit(false); 
     setSplitNames(''); setCategory(''); setCurrency1(''); setPaymentMethod('');
+  };
+
+  const sharePDF = async () => {
+    const symbol = getSymbol(masterCurrency);
+    const html = `
+      <html>
+        <body style="font-family:sans-serif;padding:20px;">
+          <h1 style="text-align:center;">${activeTrip} Report</h1>
+          <div style="background:#f1f5f9; padding:15px; border-radius:10px; margin-bottom:20px;">
+            <p style="margin:5px 0;"><strong>Full Bill Total:</strong> ${symbol}${formatValue(totals.grand)}</p>
+            <p style="margin:5px 0; color:#10b981;"><strong>Total Your Share:</strong> ${symbol}${formatValue(totals.yourShare)}</p>
+          </div>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:#3b82f6; color:#fff;">
+                <th style="padding:10px; border:1px solid #ddd;">Date</th>
+                <th style="padding:10px; border:1px solid #ddd;">Description</th>
+                <th style="padding:10px; border:1px solid #ddd;">Split With</th>
+                <th style="padding:10px; border:1px solid #ddd;">Full Amount</th>
+                <th style="padding:10px; border:1px solid #ddd;">Your Share (${masterCurrency})</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${currentExpenses.map(e => {
+                const totalConv = getConvertedAmount(e.amount_1, e.currency_1);
+                const splitFactor = e.split && e.splitNames ? e.splitNames.split(',').length + 1 : 1;
+                return `<tr>
+                  <td style="border:1px solid #ddd;padding:8px;">${e.date}</td>
+                  <td style="border:1px solid #ddd;padding:8px;">${e.description} (${e.category})</td>
+                  <td style="border:1px solid #ddd;padding:8px;">${e.split ? e.splitNames : 'No'}</td>
+                  <td style="border:1px solid #ddd;padding:8px;">${formatValue(e.amount_1)} ${e.currency_1}</td>
+                  <td style="border:1px solid #ddd;padding:8px; font-weight:bold;">${symbol}${formatValue(totalConv/splitFactor)}</td>
+                </tr>`
+              }).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>`;
+    const { uri } = await Print.printToFileAsync({ html });
+    await Sharing.shareAsync(uri);
   };
 
   const renderHome = () => (
@@ -181,6 +224,7 @@ export default function App() {
 
         <TouchableOpacity style={styles.submitBtn} onPress={handleSaveExpense}><Text style={styles.btnText}>+ ADD ENTRY</Text></TouchableOpacity>
       </View>
+      <TouchableOpacity style={styles.exportBtn} onPress={sharePDF}><Text style={styles.btnText}>📤 EXPORT PDF REPORT</Text></TouchableOpacity>
       <View style={{height: 150}} />
     </ScrollView>
   );
@@ -213,7 +257,7 @@ const styles = StyleSheet.create({
   header: { padding: 20, paddingTop: 45, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
   appTitle: { fontSize: 20, fontWeight: '900', color: '#1e293b', textAlign: 'center' },
   homeCurrencyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 10 },
-  currencyPickerWrapper: { width: 200, backgroundColor: '#f1f5f9', borderRadius: 10, height: 40, justifyContent: 'center' },
+  currencyPickerWrapper: { width: 220, backgroundColor: '#f1f5f9', borderRadius: 10, height: 40, justifyContent: 'center' },
   subText: { color: '#64748b', fontSize: 13, fontWeight: 'bold' },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
   tripPicker: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 10, height: 45, justifyContent: 'center' },
@@ -224,6 +268,7 @@ const styles = StyleSheet.create({
   dateSelector: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 15, borderWidth: 1, borderColor: '#e2e8f0' },
   halfPicker: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center', marginRight: 5 },
   submitBtn: { backgroundColor: '#10b981', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 15 },
+  exportBtn: { backgroundColor: '#3b82f6', padding: 15, borderRadius: 12, alignItems: 'center', margin: 15 },
   btnText: { color: '#fff', fontWeight: 'bold' },
   grandTotalText: { textAlign: 'center', fontSize: 16, fontWeight: '900', color: '#10b981', marginTop: 10 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
