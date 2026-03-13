@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, Keyboard, ScrollView, Modal, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, Keyboard, ScrollView, Modal, Platform, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -27,6 +27,7 @@ export default function App() {
   const [masterCurrency, setMasterCurrency] = useState('');
   const [rates, setRates] = useState({});
   
+  // Inputs
   const [editingId, setEditingId] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateObj, setDateObj] = useState(new Date());
@@ -88,10 +89,8 @@ export default function App() {
       const amt = getConvertedAmount(e.amount_1, e.currency_1);
       const factor = e.type === 'Credit' ? -1 : 1;
       const splitFactor = e.split && e.splitNames ? e.splitNames.split(',').length + 1 : 1;
-      
       if (e.method === 'Cash 💵') cash += (amt * factor);
       else nonCash += (amt * factor);
-      
       yourShareTotal += ((amt / splitFactor) * factor);
     });
     return { cash, nonCash, grand: cash + nonCash, yourShare: yourShareTotal };
@@ -99,61 +98,20 @@ export default function App() {
 
   const handleSaveExpense = () => {
     if (!amount1 || !description || !category || !currency1 || !paymentMethod) {
-      return Alert.alert('Selection Required', 'Please ensure Category, Payment Mode, and Currency are selected.');
+      return Alert.alert('Selection Required', 'Please select Category, Mode of Payment, and Currency.');
     }
     const finalCat = category === "🎟️ Other" ? `🎟️ ${customCategory || 'Other'}` : category;
-    const exp = { 
-      id: editingId || Date.now().toString(), 
-      date: dateObj.toISOString().split('T')[0], 
-      description, category: finalCat,
-      amount_1: parseFloat(amount1), currency_1: currency1, type: txType, 
-      method: paymentMethod, split: isSplit, splitNames 
-    };
+    const exp = { id: editingId || Date.now().toString(), date: dateObj.toISOString().split('T')[0], description, category: finalCat, amount_1: parseFloat(amount1), currency_1: currency1, type: txType, method: paymentMethod, split: isSplit, splitNames };
     let updated = editingId ? currentExpenses.map(i => i.id === editingId ? exp : i) : [exp, ...currentExpenses];
     updated.sort((a, b) => new Date(b.date) - new Date(a.date));
     const t = { ...trips, [activeTrip]: updated };
     setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets);
-    
-    setEditingId(null); setAmount1(''); setDescription(''); setIsSplit(false); 
-    setSplitNames(''); setCategory(''); setCurrency1(''); setPaymentMethod('');
+    setEditingId(null); setAmount1(''); setDescription(''); setIsSplit(false); setSplitNames(''); setCategory(''); setCurrency1(''); setPaymentMethod('');
   };
 
   const sharePDF = async () => {
     const symbol = getSymbol(masterCurrency);
-    const html = `
-      <html>
-        <body style="font-family:sans-serif;padding:20px;">
-          <h1 style="text-align:center;">${activeTrip} Report</h1>
-          <div style="background:#f1f5f9; padding:15px; border-radius:10px; margin-bottom:20px;">
-            <p style="margin:5px 0;"><strong>Full Bill Total:</strong> ${symbol}${formatValue(totals.grand)}</p>
-            <p style="margin:5px 0; color:#10b981;"><strong>Total Your Share:</strong> ${symbol}${formatValue(totals.yourShare)}</p>
-          </div>
-          <table style="width:100%;border-collapse:collapse;">
-            <thead>
-              <tr style="background:#3b82f6; color:#fff;">
-                <th style="padding:10px; border:1px solid #ddd;">Date</th>
-                <th style="padding:10px; border:1px solid #ddd;">Description</th>
-                <th style="padding:10px; border:1px solid #ddd;">Split With</th>
-                <th style="padding:10px; border:1px solid #ddd;">Full Amount</th>
-                <th style="padding:10px; border:1px solid #ddd;">Your Share (${masterCurrency})</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${currentExpenses.map(e => {
-                const totalConv = getConvertedAmount(e.amount_1, e.currency_1);
-                const splitFactor = e.split && e.splitNames ? e.splitNames.split(',').length + 1 : 1;
-                return `<tr>
-                  <td style="border:1px solid #ddd;padding:8px;">${e.date}</td>
-                  <td style="border:1px solid #ddd;padding:8px;">${e.description} (${e.category})</td>
-                  <td style="border:1px solid #ddd;padding:8px;">${e.split ? e.splitNames : 'No'}</td>
-                  <td style="border:1px solid #ddd;padding:8px;">${formatValue(e.amount_1)} ${e.currency_1}</td>
-                  <td style="border:1px solid #ddd;padding:8px; font-weight:bold;">${symbol}${formatValue(totalConv/splitFactor)}</td>
-                </tr>`
-              }).join('')}
-            </tbody>
-          </table>
-        </body>
-      </html>`;
+    const html = `<html><body style="font-family:sans-serif;padding:20px;"><h1 style="text-align:center;">${activeTrip} Report</h1><div style="background:#f1f5f9; padding:15px; border-radius:10px; margin-bottom:20px;"><p><strong>Full Bill Total:</strong> ${symbol}${formatValue(totals.grand)}</p><p style="color:#10b981;"><strong>Total Your Share:</strong> ${symbol}${formatValue(totals.yourShare)}</p></div><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#3b82f6; color:#fff;"><th>Date</th><th>Description</th><th>Split With</th><th>Full Amt</th><th>Your Share</th></tr></thead><tbody>${currentExpenses.map(e => { const conv = getConvertedAmount(e.amount_1, e.currency_1); const sf = e.split && e.splitNames ? e.splitNames.split(',').length + 1 : 1; return `<tr><td style="border:1px solid #ddd;padding:8px;">${e.date}</td><td style="border:1px solid #ddd;padding:8px;">${e.description} (${e.category})</td><td style="border:1px solid #ddd;padding:8px;">${e.split ? e.splitNames : 'No'}</td><td style="border:1px solid #ddd;padding:8px;">${formatValue(e.amount_1)} ${e.currency_1}</td><td style="border:1px solid #ddd;padding:8px; font-weight:bold;">${symbol}${formatValue(conv/sf)}</td></tr>`}).join('')}</tbody></table></body></html>`;
     const { uri } = await Print.printToFileAsync({ html });
     await Sharing.shareAsync(uri);
   };
@@ -172,58 +130,50 @@ export default function App() {
             </View>
         </View>
         <View style={styles.row}>
-          <View style={styles.tripPicker}>
-            <Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={activeTrip} onValueChange={setActiveTrip}>
-              <Picker.Item label="Select Trip" value="" />
-              {Object.keys(trips).map(t => <Picker.Item key={t} label={t} value={t} />)}
-            </Picker>
-          </View>
+          <View style={styles.tripPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={activeTrip} onValueChange={setActiveTrip}><Picker.Item label="Select Trip" value="" />{Object.keys(trips).map(t => <Picker.Item key={t} label={t} value={t} />)}</Picker></View>
           <TouchableOpacity style={styles.plusBtn} onPress={() => {setNewTripName(''); setModalVisible(true)}}><Text style={styles.plusText}>+</Text></TouchableOpacity>
         </View>
-        <Text style={styles.grandTotalText}>Grand Total: {getSymbol(masterCurrency)}{formatValue(totals.grand)}</Text>
+        <Text style={styles.grandTotalText}>Total Bill: {getSymbol(masterCurrency)}{formatValue(totals.grand)}</Text>
       </View>
 
       <View style={styles.inputCard}>
         <TouchableOpacity style={styles.dateSelector} onPress={() => setShowDatePicker(true)}>
           <Text style={{color: '#000'}}>📅 Date: {dateObj.toLocaleDateString('en-GB')}</Text>
         </TouchableOpacity>
-        {showDatePicker && (
-          <DateTimePicker value={dateObj} mode="date" display="default" onChange={(e, d) => { setShowDatePicker(false); if(d) setDateObj(d); }} />
-        )}
+        {showDatePicker && (<DateTimePicker value={dateObj} mode="date" display="default" onChange={(e, d) => { setShowDatePicker(false); if(d) setDateObj(d); }} />)}
 
         <TextInput style={[styles.input, {marginVertical: 10, color:'#000'}]} placeholder="Add Description Here" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
         
         <View style={styles.row}>
-          <View style={styles.halfPicker}>
-            <Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={category} onValueChange={setCategory}>
-              <Picker.Item label="Select your Category" value="" />
-              {CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}
-            </Picker>
-          </View>
+          <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={category} onValueChange={setCategory}><Picker.Item label="Select your Category" value="" />{CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}</Picker></View>
           <TextInput style={[styles.input, {flex: 1, color:'#000'}]} placeholder="Add Amount Here" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
         </View>
 
-        {category === "🎟️ Other" && (
-          <TextInput style={[styles.input, {marginTop: 10, borderColor:'#10b981', borderWidth:1, color:'#000'}]} placeholder="Describe other category..." placeholderTextColor="#94a3b8" value={customCategory} onChangeText={setCustomCategory} />
-        )}
+        {category === "🎟️ Other" && (<TextInput style={[styles.input, {marginTop: 10, borderColor:'#10b981', borderWidth:1, color:'#000'}]} placeholder="Describe other category..." placeholderTextColor="#94a3b8" value={customCategory} onChangeText={setCustomCategory} />)}
 
         <View style={[styles.row, {marginTop:10}]}>
-          <View style={styles.halfPicker}>
-            <Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={currency1} onValueChange={setCurrency1}>
-              <Picker.Item label="Select Your Currency" value="" />
-              {CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
-            </Picker>
-          </View>
-          <View style={styles.halfPicker}>
-            <Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={paymentMethod} onValueChange={setPaymentMethod}>
-              <Picker.Item label="Select Mode of Payment" value="" />
-              {PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}
-            </Picker>
-          </View>
+          <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={currency1} onValueChange={setCurrency1}><Picker.Item label="Select Your Currency" value="" />{CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}</Picker></View>
+          <View style={styles.halfPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={paymentMethod} onValueChange={setPaymentMethod}><Picker.Item label="Select Mode of Payment" value="" />{PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}</Picker></View>
         </View>
+
+        <View style={[styles.rowBetween, {marginTop: 10}]}>
+          <Text style={{fontWeight:'bold', color:'#000'}}>Split with Friends?</Text>
+          <TouchableOpacity onPress={() => setIsSplit(!isSplit)} style={[styles.splitToggle, isSplit && {backgroundColor: '#3b82f6'}]}><Text style={{color: isSplit ? '#fff' : '#000'}}>👥 {isSplit ? 'YES' : 'NO'}</Text></TouchableOpacity>
+        </View>
+        {isSplit && <TextInput style={[styles.input, {marginTop: 10, color:'#000', borderColor: '#3b82f6', borderWidth: 1}]} placeholder="Names (e.g. Ajay, Rahul)" placeholderTextColor="#94a3b8" value={splitNames} onChangeText={setSplitNames} />}
 
         <TouchableOpacity style={styles.submitBtn} onPress={handleSaveExpense}><Text style={styles.btnText}>+ ADD ENTRY</Text></TouchableOpacity>
       </View>
+      {currentExpenses.map(item => {
+        const conv = getConvertedAmount(item.amount_1, item.currency_1);
+        const sf = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
+        return (
+          <TouchableOpacity key={item.id} style={styles.card} onPress={() => {setEditingId(item.id); setDescription(item.description); setAmount1(item.amount_1.toString()); scrollRef.current?.scrollTo({y:0, animated:true});}}>
+            <View style={{flex: 1}}><Text style={styles.cardDate}>{item.date}</Text><Text style={styles.cardDesc}>{item.description}</Text>{item.split && <Text style={styles.splitSubText}>Share: {getSymbol(masterCurrency)}{formatValue(conv/sf)} per person</Text>}</View>
+            <View style={{alignItems: 'flex-end'}}><Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text></View>
+          </TouchableOpacity>
+        );
+      })}
       <TouchableOpacity style={styles.exportBtn} onPress={sharePDF}><Text style={styles.btnText}>📤 EXPORT PDF REPORT</Text></TouchableOpacity>
       <View style={{height: 150}} />
     </ScrollView>
@@ -231,23 +181,24 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Modal visible={modalVisible} transparent animationType="slide">
+      <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
           <Text style={styles.modalTitle}>New Trip</Text>
           <TextInput style={styles.modalInput} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name" placeholderTextColor="#94a3b8" />
-          <TextInput style={styles.modalInput} value={newTripBudget} onChangeText={setNewTripBudget} placeholder="Budget (Optional)" placeholderTextColor="#94a3b8" keyboardType="numeric" />
-          <View style={styles.row}>
-            <TouchableOpacity style={[styles.modalBtn, {backgroundColor:'#ccc'}]} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => { 
-                if(!newTripName) return; 
-                const t = {...trips, [newTripName]: []}; 
-                const b = {...tripBudgets, [newTripName]: parseFloat(newTripBudget)||0}; 
-                setTrips(t); setTripBudgets(b); setActiveTrip(newTripName); saveData(t, newTripName, masterCurrency, b); setModalVisible(false); 
-            }}><Text style={{color:'#fff'}}>Save</Text></TouchableOpacity>
-          </View>
+          <View style={styles.row}><TouchableOpacity style={[styles.modalBtn, {backgroundColor:'#ccc'}]} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity><TouchableOpacity style={styles.modalBtn} onPress={() => { if(!newTripName) return; const t = {...trips, [newTripName]: []}; setTrips(t); setActiveTrip(newTripName); saveData(t, newTripName, masterCurrency, tripBudgets); setModalVisible(false); }}><Text style={{color:'#fff'}}>Save</Text></TouchableOpacity></View>
         </View></View>
       </Modal>
-      {renderHome()}
+      {currentTab === 'Home' ? renderHome() : (
+        <ScrollView style={{flex:1, padding: 20}}>
+            <View style={{height: 40}} /><Text style={styles.appTitle}>FEATURES 🚀</Text>
+            <View style={[styles.summaryCard, {backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderWidth: 1}]}><Text style={{fontWeight: '900', color: '#1e293b', fontSize: 16}}>Travel Expense Tracker v1.1</Text><Text style={{fontSize: 13, color: '#475569', marginTop: 5}}>Designed & Developed by Shitanshu Chokshi</Text></View>
+            <View style={styles.summaryCard}><Text style={styles.summaryTitle}>🌍 Smart Engine</Text><Text style={styles.featureListText}>• Live Currency & PDF Exporting</Text></View>
+        </ScrollView>
+      )}
+      <View style={styles.tabBar}>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Home')}><Text style={styles.tabIcon}>🏠</Text><Text style={styles.tabText}>Home</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => setCurrentTab('Features')}><Text style={styles.tabIcon}>✨</Text><Text style={styles.tabText}>Features</Text></TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -260,6 +211,8 @@ const styles = StyleSheet.create({
   currencyPickerWrapper: { width: 220, backgroundColor: '#f1f5f9', borderRadius: 10, height: 40, justifyContent: 'center' },
   subText: { color: '#64748b', fontSize: 13, fontWeight: 'bold' },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  grandTotalText: { textAlign: 'center', fontSize: 16, fontWeight: '900', color: '#10b981', marginTop: 10 },
   tripPicker: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 10, height: 45, justifyContent: 'center' },
   plusBtn: { backgroundColor: '#10b981', width: 45, height: 45, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   plusText: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
@@ -267,10 +220,22 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 12, color: '#000' },
   dateSelector: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 15, borderWidth: 1, borderColor: '#e2e8f0' },
   halfPicker: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center', marginRight: 5 },
+  splitToggle: { padding: 10, borderRadius: 10, backgroundColor: '#e2e8f0' },
   submitBtn: { backgroundColor: '#10b981', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 15 },
   exportBtn: { backgroundColor: '#3b82f6', padding: 15, borderRadius: 12, alignItems: 'center', margin: 15 },
   btnText: { color: '#fff', fontWeight: 'bold' },
-  grandTotalText: { textAlign: 'center', fontSize: 16, fontWeight: '900', color: '#10b981', marginTop: 10 },
+  card: { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: 15, marginBottom: 10, padding: 15, borderRadius: 16, elevation: 2 },
+  cardDate: { fontSize: 10, color: '#94a3b8' },
+  cardDesc: { fontWeight: 'bold', fontSize: 14, color: '#1e293b' },
+  cardAmt: { fontWeight: 'bold', fontSize: 16 },
+  splitSubText: { fontSize: 10, color: '#3b82f6', fontStyle: 'italic' },
+  tabBar: { flexDirection: 'row', backgroundColor: '#fff', height: 95, borderTopWidth: 1, borderColor: '#e2e8f0', paddingBottom: 40 },
+  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  tabIcon: { fontSize: 22 },
+  tabText: { fontSize: 10, fontWeight: 'bold', color: '#64748b' },
+  summaryCard: { backgroundColor: '#fff', padding: 20, borderRadius: 20, elevation: 3, marginBottom: 15 },
+  summaryTitle: { fontWeight: 'bold', marginBottom: 15, color: '#1e293b', fontSize: 16 },
+  featureListText: { fontSize: 12, color: '#64748b', marginBottom: 6 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#fff', padding: 25, borderRadius: 25, width: '85%' },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#000' },
