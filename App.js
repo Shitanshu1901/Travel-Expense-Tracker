@@ -438,7 +438,7 @@ export default function App() {
     </ScrollView>
   );
 
-  const renderFeatures = () => (
+const renderFeatures = () => (
     <ScrollView style={{flex:1, padding: 20}}>
       <View style={{height: 40}} />
       <Text style={[styles.appTitle, {marginBottom: 10}]}>WHAT'S NEW 🚀</Text>
@@ -456,6 +456,25 @@ export default function App() {
         <Text style={styles.summaryTitle}>🌍 Smart Currency Engine</Text>
         <Text style={styles.featureListText}>• Real-Time Home Currency Switching</Text>
         <Text style={styles.featureListText}>• Live Exchange Rates via API</Text>
+        <Text style={styles.featureListText}>• Historical Rate Tracking saved on cards</Text>
+        <Text style={styles.featureListText}>• Dual Visibility of rates</Text>
+      </View>
+       <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>👥 Split-Cost Management</Text>
+        <Text style={styles.featureListText}>• Multi-Person Splitting toggle</Text>
+        <Text style={styles.featureListText}>• Per-person share display on expenses</Text>
+        <Text style={styles.featureListText}>• "Who Owes Whom" settlement engine</Text>
+      </View>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>📊 Analytics & Budgeting</Text>
+        <Text style={styles.featureListText}>• Optional Trip Budgeting limits</Text>
+        <Text style={styles.featureListText}>• Visual Budget Health Progress Bar</Text>
+        <Text style={styles.featureListText}>• Category Spending visual graphs</Text>
+      </View>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>📤 Professional Reporting</Text>
+        <Text style={styles.featureListText}>• One-Tap PDF Export</Text>
+        <Text style={styles.featureListText}>• Detailed Documentation when exported</Text>
       </View>
       <View style={{height: 120}} />
     </ScrollView>
