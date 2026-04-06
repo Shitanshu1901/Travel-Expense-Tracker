@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, ScrollView, Modal, Platform, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, ScrollView, Modal, Platform, Image, Switch, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -27,14 +27,21 @@ const LOCATIONS = [
 
 export default function App() {
   const scrollRef = useRef(null);
+  const [appLoaded, setAppLoaded] = useState(false);
+  const [loadProgress, setLoadProgress] = useState(0);
+
   const [currentTab, setCurrentTab] = useState('Home');
   const [trips, setTrips] = useState({});
   const [tripBudgets, setTripBudgets] = useState({});
+  const [tripDays, setTripDays] = useState({});
   const [activeTrip, setActiveTrip] = useState('');
   const [masterCurrency, setMasterCurrency] = useState('INR');
   const [rates, setRates] = useState({});
   
-  // Form States
+  const [appSettings, setAppSettings] = useState({ showSplit: false, showSync: false });
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+
+  const [expenseModalVisible, setExpenseModalVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateObj, setDateObj] = useState(new Date());
@@ -51,16 +58,21 @@ export default function App() {
   const [isSplit, setIsSplit] = useState(false);
   const [splitNames, setSplitNames] = useState('');
 
-  // Modals
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState('add');
   const [newTripName, setNewTripName] = useState('');
   const [newTripBudget, setNewTripBudget] = useState('');
+  const [newTripDays, setNewTripDays] = useState('');
+  const [tripStyle, setTripStyle] = useState('solo');
   
-  // Wallet Sync Modal States
   const [syncModalVisible, setSyncModalVisible] = useState(false);
   const [syncAmount, setSyncAmount] = useState('');
   const [syncCurrency, setSyncCurrency] = useState('VND');
+
+  useEffect(() => {
+    const interval = setInterval(() => setLoadProgress(p => p < 100 ? p + 5 : 100), 100);
+    setTimeout(() => { clearInterval(interval); setAppLoaded(true); }, 2500);
+  }, []);
 
   const loadAllData = useCallback(async () => {
     const v6 = await AsyncStorage.getItem('@nexus_v6_pro');
@@ -68,6 +80,8 @@ export default function App() {
       const p = JSON.parse(v6);
       setTrips(p.trips || {});
       setTripBudgets(p.budgets || {});
+      setTripDays(p.days || {});
+      setAppSettings(p.settings || { showSplit: false, showSync: false });
       setMasterCurrency(p.masterCurrency || 'INR');
       if (p.activeTrip) setActiveTrip(p.activeTrip);
     }
@@ -84,12 +98,13 @@ export default function App() {
   useEffect(() => { loadAllData(); }, [loadAllData]);
   useEffect(() => { fetchRates(); }, [fetchRates]);
 
-  const saveData = async (t, a, m, b) => {
-    await AsyncStorage.setItem('@nexus_v6_pro', JSON.stringify({ trips: t, activeTrip: a, masterCurrency: m, budgets: b }));
+  const saveData = async (t, a, m, b, d, s) => {
+    await AsyncStorage.setItem('@nexus_v6_pro', JSON.stringify({ trips: t, activeTrip: a, masterCurrency: m, budgets: b, days: d, settings: s }));
   };
 
   const currentExpenses = useMemo(() => (activeTrip ? trips[activeTrip] || [] : []), [trips, activeTrip]);
   const currentBudget = tripBudgets[activeTrip] || 0;
+  const currentDays = tripDays[activeTrip] || 0;
   
   const getConvertedAmount = useCallback((amount, fromCurrency) => {
     if (fromCurrency === masterCurrency) return amount;
@@ -104,6 +119,7 @@ export default function App() {
     setEditingId(null); setDateObj(new Date()); setIsDateSelected(false); setTxType('Debit');
     setCountry(''); setCity(''); setDescription(''); setCategory(''); setCustomCategory('');
     setAmount1(''); setCurrency1(''); setPaymentMethod(''); setIsSplit(false); setSplitNames('');
+    setExpenseModalVisible(false);
   };
 
   const totals = useMemo(() => {
@@ -111,10 +127,8 @@ export default function App() {
     currentExpenses.forEach(e => {
       const amt = getConvertedAmount(e.amount_1, e.currency_1);
       const factor = e.type === 'Credit' ? -1 : 1;
-      
       if (e.method === 'Cash 💵') cash += (amt * factor);
       else nonCash += (amt * factor);
-      
       if (e.split && e.splitNames) {
          const sf = e.splitNames.split(',').length + 1;
          splitsTotal += ((amt / sf) * factor); 
@@ -123,45 +137,28 @@ export default function App() {
     return { cash, nonCash, grand: cash + nonCash, splitsTotal };
   }, [currentExpenses, getConvertedAmount]);
 
-  // SMART WALLET SYNC ENGINE
   const handleWalletSync = () => {
     const actualAmount = parseFloat(syncAmount);
     if (isNaN(actualAmount)) return Alert.alert('Error', 'Enter a valid amount');
-
-    // Calculate current recorded cash balance in that specific currency
     let currentBalance = 0;
     currentExpenses.forEach(e => {
       if (e.method === 'Cash 💵' && e.currency_1 === syncCurrency) {
          currentBalance += e.type === 'Credit' ? e.amount_1 : -e.amount_1;
       }
     });
-
     const difference = actualAmount - currentBalance;
-
-    if (difference === 0) {
-      Alert.alert("All Good!", "Your physical wallet already perfectly matches the app.");
-      setSyncModalVisible(false); return;
-    }
+    if (difference === 0) { Alert.alert("All Good!", "Your wallet already perfectly matches the app."); setSyncModalVisible(false); return; }
 
     const exp = {
-      id: Date.now().toString(),
-      date: new Date().toISOString().split('T')[0],
-      type: difference > 0 ? 'Credit' : 'Debit',
-      country: 'Auto', city: 'Wallet Sync',
-      description: 'Wallet Sync Auto-Correction',
-      category: '🎟️ Other',
-      amount_1: Math.abs(difference),
-      currency_1: syncCurrency,
-      method: 'Cash 💵',
-      split: false, splitNames: ''
+      id: Date.now().toString(), date: new Date().toISOString().split('T')[0],
+      type: difference > 0 ? 'Credit' : 'Debit', country: 'Auto', city: 'Wallet Sync',
+      description: 'Wallet Sync Auto-Correction', category: '🎟️ Other', amount_1: Math.abs(difference),
+      currency_1: syncCurrency, method: 'Cash 💵', split: false, splitNames: ''
     };
-
-    const updated = [exp, ...currentExpenses];
-    const t = { ...trips, [activeTrip]: updated };
-    setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets);
-    
+    const t = { ...trips, [activeTrip]: [exp, ...currentExpenses] };
+    setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings);
     setSyncModalVisible(false); setSyncAmount('');
-    Alert.alert("Wallet Synced!", "An adjustment entry has been made to perfectly match your physical cash.");
+    Alert.alert("Wallet Synced!", "Adjustment entry created.");
   };
 
   const handleSaveExpense = () => {
@@ -169,18 +166,15 @@ export default function App() {
       return Alert.alert('Error', 'Please fill out all fields before saving.');
     }
     const finalCat = category === "🎟️ Other" ? `🎟️ ${customCategory || 'Other'}` : category;
-    
     const exp = { 
       id: editingId || Date.now().toString(), date: dateObj.toISOString().split('T')[0], 
       type: txType, country, city, description, category: finalCat, 
       amount_1: parseFloat(amount1), currency_1: currency1, method: paymentMethod, split: isSplit, splitNames 
     };
-    
     let updated = editingId ? currentExpenses.map(i => i.id === editingId ? exp : i) : [exp, ...currentExpenses];
     updated.sort((a, b) => new Date(b.date) - new Date(a.date));
-    
     const t = { ...trips, [activeTrip]: updated };
-    setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets);
+    setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings);
     resetForm(); 
   };
 
@@ -189,29 +183,45 @@ export default function App() {
     setTxType(item.type || 'Debit'); setCountry(item.country || ''); setCity(item.city || '');
     setDescription(item.description); setAmount1(item.amount_1.toString()); setCurrency1(item.currency_1); 
     setPaymentMethod(item.method); setIsSplit(item.split || false); setSplitNames(item.splitNames || ''); 
-    
     if (item.category.startsWith('🎟️')) { setCategory("🎟️ Other"); setCustomCategory(item.category.replace('🎟️ ', '')); } 
     else { setCategory(item.category); }
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    setExpenseModalVisible(true);
   };
 
   const handleTripSave = () => {
     if (!newTripName) return;
-    const t = { ...trips }; const b = { ...tripBudgets };
-    if (modalMode === 'add') { t[newTripName] = []; b[newTripName] = parseFloat(newTripBudget) || 0; setActiveTrip(newTripName); } 
-    else {
-      if (newTripName !== activeTrip) { t[newTripName] = t[activeTrip]; delete t[activeTrip]; b[newTripName] = parseFloat(newTripBudget) || 0; delete b[activeTrip]; setActiveTrip(newTripName); } 
-      else { b[activeTrip] = parseFloat(newTripBudget) || 0; }
+    const t = { ...trips }; const b = { ...tripBudgets }; const d = { ...tripDays };
+    let s = { ...appSettings };
+    
+    if (modalMode === 'add') {
+      t[newTripName] = []; b[newTripName] = parseFloat(newTripBudget) || 0; d[newTripName] = parseInt(newTripDays) || 0;
+      setActiveTrip(newTripName);
+      if (tripStyle === 'solo') s = { showSplit: false, showSync: false };
+      else if (tripStyle === 'group') s = { showSplit: true, showSync: false };
+      else if (tripStyle === 'pro') s = { showSplit: true, showSync: true };
+      setAppSettings(s);
+    } else {
+      if (newTripName !== activeTrip) {
+        t[newTripName] = t[activeTrip]; delete t[activeTrip];
+        b[newTripName] = parseFloat(newTripBudget) || 0; delete b[activeTrip];
+        d[newTripName] = parseInt(newTripDays) || 0; delete d[activeTrip];
+        setActiveTrip(newTripName);
+      } else {
+        b[activeTrip] = parseFloat(newTripBudget) || 0;
+        d[activeTrip] = parseInt(newTripDays) || 0;
+      }
     }
-    setTrips(t); setTripBudgets(b); saveData(t, newTripName, masterCurrency, b);
+    setTrips(t); setTripBudgets(b); setTripDays(d); saveData(t, newTripName || activeTrip, masterCurrency, b, d, s);
     setModalVisible(false); resetForm(); 
   };
 
   const confirmDeleteTrip = () => {
     Alert.alert("Delete Trip", `Are you sure you want to delete ${activeTrip}?`, [
       { text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => {
-          const t = { ...trips }; const b = { ...tripBudgets }; delete t[activeTrip]; delete b[activeTrip];
-          const next = Object.keys(t)[0] || ''; setTrips(t); setTripBudgets(b); setActiveTrip(next); saveData(t, next, masterCurrency, b); resetForm();
+          const t = { ...trips }; const b = { ...tripBudgets }; const d = { ...tripDays };
+          delete t[activeTrip]; delete b[activeTrip]; delete d[activeTrip];
+          const next = Object.keys(t)[0] || ''; 
+          setTrips(t); setTripBudgets(b); setTripDays(d); setActiveTrip(next); saveData(t, next, masterCurrency, b, d, appSettings); resetForm();
       }}
     ]);
   };
@@ -220,7 +230,7 @@ export default function App() {
     Alert.alert("Delete Expense", "Are you sure you want to delete this entry?", [
       { text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => {
           const u = currentExpenses.filter(e => e.id !== itemId); const t = { ...trips, [activeTrip]: u }; 
-          setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets); resetForm();
+          setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings); resetForm();
       }}
     ]);
   };
@@ -228,7 +238,6 @@ export default function App() {
   const sharePDF = async () => {
     const symbol = getSymbol(masterCurrency);
     const hasSplits = currentExpenses.some(e => e.split); 
-
     let tableHeader = hasSplits 
       ? `<th>Date</th><th>Category</th><th>Description</th><th>Method</th><th>Orig. Amt</th><th>Split With</th><th>Split Amt</th><th>Total (${masterCurrency})</th>`
       : `<th>Date</th><th>Category</th><th>Description</th><th>Method</th><th>Orig. Amt</th><th>Total (${masterCurrency})</th>`;
@@ -256,120 +265,113 @@ export default function App() {
     await Sharing.shareAsync(uri);
   };
 
-  const renderHome = () => (
-    <ScrollView ref={scrollRef} stickyHeaderIndices={[0]}>
-      <View style={styles.header}>
-        <Text style={styles.appTitle}>EXPENSE TRACKER</Text>
-        
-        <View style={styles.homeCurrencyRow}>
-            <Text style={styles.subText}>Home Currency: </Text>
-            <View style={styles.currencyPickerWrapper}>
-              <Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={masterCurrency} onValueChange={(m) => { setMasterCurrency(m); saveData(trips, activeTrip, m, tripBudgets); }}>
-                {CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
-              </Picker>
-            </View>
-        </View>
+  const sendWhatsApp = (name, amount) => {
+    const msg = `Hey ${name}, your share of the expenses for this trip is ${getSymbol(masterCurrency)}${formatValue(amount)}!`;
+    Linking.openURL(`whatsapp://send?text=${encodeURIComponent(msg)}`).catch(() => Alert.alert('Error', 'WhatsApp is not installed on your device.'));
+  };
 
-        <View style={styles.row}>
-          <View style={styles.tripPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={activeTrip} onValueChange={(val) => {setActiveTrip(val); resetForm();}}><Picker.Item label="Select Trip" value="" />{Object.keys(trips).map(t => <Picker.Item key={t} label={t} value={t} />)}</Picker></View>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => {setModalMode('edit'); setNewTripName(activeTrip); setNewTripBudget(currentBudget.toString()); setModalVisible(true)}}><Text>✏️</Text></TouchableOpacity>
-          <TouchableOpacity style={[styles.iconBtn, {backgroundColor: '#fee2e2'}]} onPress={confirmDeleteTrip}><Text>🗑️</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.plusBtn} onPress={() => {setModalMode('add'); setNewTripName(''); setNewTripBudget(''); setModalVisible(true)}}><Text style={styles.plusText}>+</Text></TouchableOpacity>
-        </View>
-
-        <View style={styles.summaryCardCompact}>
-            <Text style={styles.legendText}>🟢 Cash: {getSymbol(masterCurrency)}{formatValue(totals.cash)}</Text>
-            <Text style={styles.legendText}>🔵 Card: {getSymbol(masterCurrency)}{formatValue(totals.nonCash)}</Text>
-            {totals.splitsTotal > 0 && <Text style={styles.legendText}>🟣 Splits: {getSymbol(masterCurrency)}{formatValue(totals.splitsTotal)}</Text>}
-        </View>
+  if (!appLoaded) {
+    return (
+      <SafeAreaView style={[styles.container, {justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f9ff'}]}>
+        {/* Fixed Android Elevation Cutoff */}
+        <View style={{position: 'absolute', top: 0, width: '100%', height: '45%', backgroundColor: '#ffffff', borderBottomLeftRadius: 100, borderBottomRightRadius: 100, elevation: 1, shadowColor: '#3b82f6', shadowOpacity: 0.05, shadowRadius: 30}} />
         
-        {/* NEW: Wallet Sync Button */}
-        <TouchableOpacity style={styles.syncBtn} onPress={() => {setSyncAmount(''); setSyncModalVisible(true);}}>
-            <Text style={styles.syncBtnText}>⚖️ Auto-Sync Physical Wallet</Text>
-        </TouchableOpacity>
-        
-        <Text style={styles.grandTotalText}>Grand Total: {getSymbol(masterCurrency)}{formatValue(totals.grand)}</Text>
-
-        {currentBudget > 0 && (
-          <View style={styles.budgetContainer}>
-            <View style={styles.budgetHeader}><Text style={styles.budgetLabel}>Budget Status</Text><Text style={styles.budgetLabel}>{getSymbol(masterCurrency)}{formatValue(totals.grand)} / {formatValue(currentBudget)}</Text></View>
-            <View style={styles.progressBarBg}><View style={[styles.progressBarFill, { width: `${Math.min(totals.grand/currentBudget, 1)*100}%`, backgroundColor: (totals.grand/currentBudget) > 0.9 ? '#ef4444' : '#10b981' }]} /></View>
+        <View style={{alignItems: 'center', zIndex: 10, elevation: 10, marginBottom: 30}}>
+          <View style={{backgroundColor: '#fff', padding: 25, borderRadius: 35, shadowColor: '#3b82f6', shadowOffset: {width: 0, height: 10}, shadowOpacity: 0.15, shadowRadius: 20, elevation: 5, marginBottom: 25}}>
+            <Text style={{fontSize: 60}}>✈️☁️</Text>
           </View>
-        )}
-      </View>
-
-      <View style={styles.inputCard}>
-        <View style={styles.row}>
-          <TouchableOpacity style={[styles.dateSelector, {flex: 1}]} onPress={() => setShowDatePicker(true)}>
-            <Text style={{color: '#000'}}>{isDateSelected ? `📅 ${dateObj.toLocaleDateString('en-GB')}` : '📅 Select Date'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.typeToggle, {backgroundColor: txType === 'Debit' ? '#fee2e2' : '#dcfce7'}]} onPress={() => setTxType(txType === 'Debit' ? 'Credit' : 'Debit')}><Text style={{color: txType === 'Debit' ? '#ef4444' : '#22c55e', fontWeight: 'bold'}}>{txType.toUpperCase()}</Text></TouchableOpacity>
-        </View>
-        {showDatePicker && (<DateTimePicker value={dateObj} mode="date" display="default" onChange={(e, d) => { setShowDatePicker(false); if(d) {setDateObj(d); setIsDateSelected(true);} }} />)}
-        
-        <View style={[styles.row, {marginTop:10}]}>
-          <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={country} onValueChange={setCountry}>
-            <Picker.Item label="Select Country" value="" />{LOCATIONS.map(l => <Picker.Item key={l.country} label={l.country} value={l.country} />)}
-          </Picker></View>
-          <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={city} onValueChange={setCity}>
-            <Picker.Item label="Select City" value="" />{country ? LOCATIONS.find(l => l.country === country)?.cities.map(c => <Picker.Item key={c} label={c} value={c} />) : null}
-          </Picker></View>
+          <Text style={{fontSize: 32, fontWeight: '900', color: '#1e3a8a', letterSpacing: 0.5}}>Travel Tracker</Text>
+          <Text style={{fontSize: 12, fontWeight: 'bold', color: '#3b82f6', marginTop: 8, letterSpacing: 1}}>SYNCING JOURNEY DATA...</Text>
         </View>
 
-        <TextInput style={[styles.input, {marginVertical: 10, color:'#000'}]} placeholder="Description" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
-        
-        <View style={styles.row}>
-          <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={category} onValueChange={setCategory}>
-            <Picker.Item label="Select Category" value="" />{CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}
-          </Picker></View>
-          <TextInput style={[styles.input, {flex: 1, color:'#000'}]} placeholder="Amount" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
+        <View style={{width: '45%', height: 8, backgroundColor: '#e0f2fe', borderRadius: 10, overflow: 'hidden', zIndex: 10, elevation: 10}}>
+          <View style={{width: `${loadProgress}%`, height: '100%', backgroundColor: '#3b82f6', borderRadius: 10}} />
         </View>
+      </SafeAreaView>
+    );
+  }
 
-        {category === "🎟️ Other" && (<TextInput style={[styles.input, {marginTop: 10, borderColor:'#10b981', borderWidth:1, color:'#000'}]} placeholder="Describe other category..." placeholderTextColor="#94a3b8" value={customCategory} onChangeText={setCustomCategory} />)}
+  const renderHome = () => (
+    <View style={{flex: 1}}>
+      <ScrollView ref={scrollRef} stickyHeaderIndices={[0]}>
+        <View style={styles.header}>
+          <View style={styles.rowBetween}>
+            <View style={{width: 24}} /> {/* Invisible spacer to balance the Gear icon perfectly */}
+            <Text style={styles.appTitle}>EXPENSE TRACKER</Text>
+            <TouchableOpacity onPress={() => setSettingsModalVisible(true)}><Text style={{fontSize: 24}}>⚙️</Text></TouchableOpacity>
+          </View>
+          
+          <View style={styles.homeCurrencyRow}>
+              <Text style={styles.subText}>Home Currency: </Text>
+              <View style={styles.currencyPickerWrapper}>
+                <Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={masterCurrency} onValueChange={(m) => { setMasterCurrency(m); saveData(trips, activeTrip, m, tripBudgets, tripDays, appSettings); }}>
+                  {CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
+                </Picker>
+              </View>
+          </View>
 
-        <View style={[styles.row, {marginTop:10}]}>
-          <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={currency1} onValueChange={setCurrency1}>
-            <Picker.Item label="Select Currency" value="" />{CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
-          </Picker></View>
-          <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={paymentMethod} onValueChange={setPaymentMethod}>
-            <Picker.Item label="Select Payment" value="" />{PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}
-          </Picker></View>
-        </View>
+          <View style={styles.row}>
+            <View style={styles.tripPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={activeTrip} onValueChange={(val) => {setActiveTrip(val); resetForm();}}><Picker.Item label="Select Trip" value="" />{Object.keys(trips).map(t => <Picker.Item key={t} label={t} value={t} />)}</Picker></View>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => {setModalMode('edit'); setNewTripName(activeTrip); setNewTripBudget(currentBudget.toString()); setNewTripDays(currentDays.toString()); setModalVisible(true)}}><Text>✏️</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.iconBtn, {backgroundColor: '#fee2e2'}]} onPress={confirmDeleteTrip}><Text>🗑️</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.plusBtn} onPress={() => {setModalMode('add'); setNewTripName(''); setNewTripBudget(''); setNewTripDays(''); setTripStyle('solo'); setModalVisible(true)}}><Text style={styles.plusText}>+</Text></TouchableOpacity>
+          </View>
 
-        <View style={[styles.rowBetween, {marginTop: 10}]}>
-          <Text style={{fontWeight:'bold', color:'#000'}}>Split with Friends?</Text>
-          <TouchableOpacity onPress={() => setIsSplit(!isSplit)} style={[styles.splitToggle, isSplit && {backgroundColor: '#3b82f6'}]}><Text style={{color: isSplit ? '#fff' : '#000'}}>👥 {isSplit ? 'YES' : 'NO'}</Text></TouchableOpacity>
-        </View>
-        {isSplit && <TextInput style={[styles.input, {marginTop: 10, color:'#000', borderColor: '#3b82f6', borderWidth: 1}]} placeholder="Names (e.g. Ajay, Rahul)" placeholderTextColor="#94a3b8" value={splitNames} onChangeText={setSplitNames} />}
+          <View style={styles.summaryCardCompact}>
+              <Text style={styles.legendText}>🟢 Cash: {getSymbol(masterCurrency)}{formatValue(totals.cash)}</Text>
+              <Text style={styles.legendText}>🔵 Card: {getSymbol(masterCurrency)}{formatValue(totals.nonCash)}</Text>
+              {appSettings.showSplit && totals.splitsTotal > 0 && <Text style={styles.legendText}>🟣 Splits: {getSymbol(masterCurrency)}{formatValue(totals.splitsTotal)}</Text>}
+          </View>
+          
+          {appSettings.showSync && (
+            <TouchableOpacity style={styles.syncBtn} onPress={() => {setSyncAmount(''); setSyncModalVisible(true);}}>
+                <Text style={styles.syncBtnText}>⚖️ Auto-Sync Physical Wallet</Text>
+            </TouchableOpacity>
+          )}
+          
+          <Text style={styles.grandTotalText}>Grand Total: {getSymbol(masterCurrency)}{formatValue(totals.grand)}</Text>
 
-        <TouchableOpacity style={styles.submitBtn} onPress={handleSaveExpense}><Text style={styles.btnText}>{editingId ? 'UPDATE ENTRY' : '+ ADD EXPENSE'}</Text></TouchableOpacity>
-      </View>
-
-      {currentExpenses.map(item => {
-        const conv = getConvertedAmount(item.amount_1, item.currency_1);
-        const rate = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(4) : "1.00";
-        const sf = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
-        return (
-          <TouchableOpacity key={item.id} style={styles.card} onPress={() => startEdit(item)}>
-            <View style={{flex: 1}}>
-                <Text style={styles.cardDate}>{item.date} • {item.city}</Text>
-                <Text style={styles.cardDesc}>{item.description}</Text>
-                <Text style={styles.cardCategory}>Category: {item.category}</Text>
-                <Text style={styles.cardOrigAmt}>Original: {formatValue(item.amount_1)} {item.currency_1}</Text>
-                <Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text>
-                {item.split && <Text style={styles.splitSubText}>👥 Share: {getSymbol(masterCurrency)}{formatValue(conv/sf)} per person</Text>}
+          {currentBudget > 0 && (
+            <View style={styles.budgetContainer}>
+              <View style={styles.budgetHeader}><Text style={styles.budgetLabel}>Budget Status</Text><Text style={styles.budgetLabel}>{getSymbol(masterCurrency)}{formatValue(totals.grand)} / {formatValue(currentBudget)}</Text></View>
+              <View style={styles.progressBarBg}><View style={[styles.progressBarFill, { width: `${Math.min(totals.grand/currentBudget, 1)*100}%`, backgroundColor: (totals.grand/currentBudget) > 0.9 ? '#ef4444' : '#10b981' }]} /></View>
+              {currentDays > 0 && (
+                <Text style={styles.paceMakerText}>💡 Safe to spend today: {getSymbol(masterCurrency)}{formatValue(Math.max(0, (currentBudget - totals.grand) / currentDays))} / day</Text>
+              )}
             </View>
-            <View style={{alignItems: 'flex-end'}}>
-                <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text>
-                <TouchableOpacity onPress={() => confirmDeleteExpense(item.id)}><Text style={{color:'red',fontSize:20, marginTop: 10}}>🗑️</Text></TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        );
-      })}
-      
-      <TouchableOpacity style={styles.exportBtn} onPress={sharePDF}><Text style={styles.btnText}>📤 EXPORT PDF REPORT</Text></TouchableOpacity>
-      <View style={{height: 150}} />
-    </ScrollView>
+          )}
+        </View>
+
+        <View style={{height: 15}} />
+        {currentExpenses.map(item => {
+          const conv = getConvertedAmount(item.amount_1, item.currency_1);
+          const rate = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(4) : "1.00";
+          const sf = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
+          return (
+            <TouchableOpacity key={item.id} style={styles.card} onPress={() => startEdit(item)}>
+              <View style={{flex: 1}}>
+                  <Text style={styles.cardDate}>{item.date} • {item.city}</Text>
+                  <Text style={styles.cardDesc}>{item.description}</Text>
+                  <Text style={styles.cardCategory}>Category: {item.category}</Text>
+                  <Text style={styles.cardOrigAmt}>Original: {formatValue(item.amount_1)} {item.currency_1}</Text>
+                  <Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text>
+                  {item.split && <Text style={styles.splitSubText}>👥 Share: {getSymbol(masterCurrency)}{formatValue(conv/sf)} per person</Text>}
+              </View>
+              <View style={{alignItems: 'flex-end'}}>
+                  <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text>
+                  <TouchableOpacity onPress={() => confirmDeleteExpense(item.id)}><Text style={{color:'red',fontSize:20, marginTop: 10}}>🗑️</Text></TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+        <TouchableOpacity style={styles.exportBtn} onPress={sharePDF}><Text style={styles.btnText}>📤 EXPORT PDF REPORT</Text></TouchableOpacity>
+        <View style={{height: 150}} />
+      </ScrollView>
+
+      <TouchableOpacity style={styles.fab} onPress={() => { resetForm(); setExpenseModalVisible(true); }}>
+        <Text style={styles.fabText}>+</Text>
+      </TouchableOpacity>
+    </View>
   );
 
   const renderCharts = () => {
@@ -382,7 +384,8 @@ export default function App() {
 
     return (
         <ScrollView style={{flex:1, padding: 20}}>
-          <View style={{height: 40}} /><Text style={styles.appTitle}>ANALYTICS 📊</Text>
+          <View style={{height: 40}} />
+          <Text style={[styles.appTitle, {marginBottom: 20}]}>ANALYTICS 📊</Text>
           
           <View style={styles.summaryCard}>
             <Text style={styles.summaryTitle}>Category Spending</Text>
@@ -395,10 +398,18 @@ export default function App() {
             })}
           </View>
 
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>Who Owes You? 👥</Text>
-            {Object.keys(settlements).length > 0 ? Object.entries(settlements).map(([n, a]) => (<View key={n} style={styles.rowBetween}><Text style={{color:'#000',fontWeight:'bold'}}>{n}</Text><Text style={{color:'#10b981',fontWeight:'bold'}}>owes {getSymbol(masterCurrency)}{formatValue(a)}</Text></View>)) : <Text style={{color:'#64748b',fontSize:12}}>No split expenses recorded yet.</Text>}
-          </View>
+          {appSettings.showSplit && (
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryTitle}>Who Owes You? 👥</Text>
+              {Object.keys(settlements).length > 0 ? Object.entries(settlements).map(([n, a]) => (
+                <View key={n} style={[styles.rowBetween, {marginBottom: 10}]}>
+                  <Text style={{color:'#000',fontWeight:'bold', flex: 1}}>{n}</Text>
+                  <Text style={{color:'#10b981',fontWeight:'bold', marginRight: 15}}>owes {getSymbol(masterCurrency)}{formatValue(a)}</Text>
+                  <TouchableOpacity onPress={() => sendWhatsApp(n, a)}><Text style={{fontSize: 20}}>💬</Text></TouchableOpacity>
+                </View>
+              )) : <Text style={{color:'#64748b',fontSize:12}}>No split expenses recorded yet.</Text>}
+            </View>
+          )}
           <View style={{height: 100}} />
         </ScrollView>
     );
@@ -406,7 +417,7 @@ export default function App() {
 
   const renderGuide = () => (
     <ScrollView style={{flex:1, padding: 20}}>
-      <View style={{height: 40}} /><Text style={[styles.appTitle, {marginBottom: 10}]}>HOW TO USE 📖</Text>
+      <View style={{height: 40}} /><Text style={[styles.appTitle, {marginBottom: 20}]}>HOW TO USE 📖</Text>
       
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>1. The "Stress-Free" Method</Text>
@@ -418,6 +429,7 @@ export default function App() {
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>2. Wallet Auto-Sync ⚖️</Text>
         <Text style={styles.featureListText}>Want the app to perfectly match the physical cash in your pocket?</Text>
+        <Text style={styles.featureListText}>• Enable "Auto-Sync" in Settings (⚙️).</Text>
         <Text style={styles.featureListText}>• Count your physical cash (e.g. 238,000 VND).</Text>
         <Text style={styles.featureListText}>• Tap the "Auto-Sync Physical Wallet" button on the Home screen.</Text>
         <Text style={styles.featureListText}>• The app will find the missing leakage (bad exchange rates, lost coins) and silently fix the math for you!</Text>
@@ -425,23 +437,20 @@ export default function App() {
 
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>3. Splitting Bills 👥</Text>
-        <Text style={styles.featureListText}>• Toggle "Split with Friends" to YES.</Text>
+        <Text style={styles.featureListText}>• Enable "Splits" in Settings (⚙️).</Text>
+        <Text style={styles.featureListText}>• Toggle "Split with Friends" on any expense to YES.</Text>
         <Text style={styles.featureListText}>• Enter their names (e.g., Ajay, Rahul).</Text>
-        <Text style={styles.featureListText}>• The app calculates the split instantly, and the <Text style={{fontWeight:'bold'}}>Analytics</Text> tab will tell you exactly who owes you.</Text>
+        <Text style={styles.featureListText}>• Tap the 💬 icon in the Analytics tab to instantly WhatsApp them their debt!</Text>
       </View>
 
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>4. Smart PDFs 📤</Text>
-        <Text style={styles.featureListText}>Tap Export at the bottom of the home screen to instantly generate a branded PDF report. It automatically formats columns differently if the trip has splits.</Text>
-      </View>
       <View style={{height: 120}} />
     </ScrollView>
   );
 
-const renderFeatures = () => (
+  const renderFeatures = () => (
     <ScrollView style={{flex:1, padding: 20}}>
       <View style={{height: 40}} />
-      <Text style={[styles.appTitle, {marginBottom: 10}]}>WHAT'S NEW 🚀</Text>
+      <Text style={[styles.appTitle, {marginBottom: 20}]}>WHAT'S NEW 🚀</Text>
       <View style={[styles.summaryCard, {backgroundColor: '#eef2ff', borderColor: '#c7d2fe', borderWidth: 1}]}>
         <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 16, marginBottom: 5}}>Travel Expense Tracker</Text>
         <Text style={{fontSize: 13, color: '#475569', lineHeight: 18, marginBottom: 10}}>A professional tool built to manage international spending, split costs with friends, and monitor budgets in real-time.</Text>
@@ -449,10 +458,10 @@ const renderFeatures = () => (
         <Text style={{fontWeight: 'bold', color: '#3b82f6', fontSize: 11}}>DESIGNED & DEVELOPED BY:</Text>
         <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 15, marginTop: 2}}>Shitanshu Chokshi</Text>
       </View>
-      <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden', height: 400, backgroundColor: '#f1f5f9' }]}>
+      <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden', height: 200, backgroundColor: '#f1f5f9' }]}>
         <Image source={{ uri: 'https://raw.githubusercontent.com/Shitanshu1901/Travel-Expense-Tracker/main/App%20Infographic.png' }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
       </View>
-      <View style={styles.summaryCard}>
+       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>🌍 Smart Currency Engine</Text>
         <Text style={styles.featureListText}>• Real-Time Home Currency Switching</Text>
         <Text style={styles.featureListText}>• Live Exchange Rates via API</Text>
@@ -482,16 +491,44 @@ const renderFeatures = () => (
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Trip Modal */}
+      {/* Smart Trip Modal */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
           <Text style={styles.modalTitle}>{modalMode === 'add' ? 'New Trip' : 'Edit Trip'}</Text>
           <TextInput style={styles.modalInput} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name" placeholderTextColor="#94a3b8" />
           <TextInput style={styles.modalInput} value={newTripBudget} onChangeText={setNewTripBudget} placeholder="Budget (Optional)" placeholderTextColor="#94a3b8" keyboardType="numeric" />
+          <TextInput style={styles.modalInput} value={newTripDays} onChangeText={setNewTripDays} placeholder="Trip Duration in Days (Optional)" placeholderTextColor="#94a3b8" keyboardType="numeric" />
+          
+          {modalMode === 'add' && (
+            <View style={{backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center', marginBottom: 15}}>
+              <Picker style={{color:'#000'}} selectedValue={tripStyle} onValueChange={setTripStyle}>
+                <Picker.Item label="Solo Tracker (Clean UI)" value="solo" />
+                <Picker.Item label="Group Trip (Splits & WhatsApp)" value="group" />
+                <Picker.Item label="Power User (Splits + Wallet Sync)" value="pro" />
+              </Picker>
+            </View>
+          )}
+
           <View style={styles.row}>
-            <TouchableOpacity style={[styles.modalBtn, {backgroundColor:'#ccc'}]} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.modalBtn} onPress={handleTripSave}><Text style={{color:'#fff'}}>Save</Text></TouchableOpacity>
+            <TouchableOpacity style={{flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#ccc'}} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
+            <TouchableOpacity style={{flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#10b981'}} onPress={handleTripSave}><Text style={{color:'#fff', fontWeight: 'bold'}}>Save</Text></TouchableOpacity>
           </View>
+        </View></View>
+      </Modal>
+
+      {/* Settings Modal */}
+      <Modal visible={settingsModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}><View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>⚙️ Settings</Text>
+          <View style={[styles.rowBetween, {marginBottom: 20}]}>
+            <Text style={{fontWeight: 'bold', color: '#1e293b'}}>Enable Split Features</Text>
+            <Switch value={appSettings.showSplit} onValueChange={(val) => { const s = {...appSettings, showSplit: val}; setAppSettings(s); saveData(trips, activeTrip, masterCurrency, tripBudgets, tripDays, s); }} />
+          </View>
+          <View style={[styles.rowBetween, {marginBottom: 20}]}>
+            <Text style={{fontWeight: 'bold', color: '#1e293b'}}>Enable Wallet Auto-Sync</Text>
+            <Switch value={appSettings.showSync} onValueChange={(val) => { const s = {...appSettings, showSync: val}; setAppSettings(s); saveData(trips, activeTrip, masterCurrency, tripBudgets, tripDays, s); }} />
+          </View>
+          <TouchableOpacity style={{backgroundColor: '#10b981', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 15}} onPress={() => setSettingsModalVisible(false)}><Text style={{color:'#fff', fontWeight: 'bold'}}>Done</Text></TouchableOpacity>
         </View></View>
       </Modal>
 
@@ -500,19 +537,80 @@ const renderFeatures = () => (
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
           <Text style={styles.modalTitle}>⚖️ Sync Wallet</Text>
           <Text style={{fontSize: 12, color: '#64748b', marginBottom: 15, textAlign: 'center'}}>Enter the exact cash currently in your hand. We'll fix the math.</Text>
-          
-          <View style={styles.currencyPickerWrapper} style={{backgroundColor:'#f1f5f9', borderRadius:12, marginBottom:10}}>
+          <View style={{backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center', marginBottom: 15}}>
               <Picker style={{color:'#000'}} selectedValue={syncCurrency} onValueChange={setSyncCurrency}>
                 {CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
               </Picker>
           </View>
           <TextInput style={styles.modalInput} value={syncAmount} onChangeText={setSyncAmount} placeholder="Actual Physical Amount" placeholderTextColor="#94a3b8" keyboardType="numeric" />
-          
           <View style={styles.row}>
-            <TouchableOpacity style={[styles.modalBtn, {backgroundColor:'#ccc'}]} onPress={() => setSyncModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.modalBtn} onPress={handleWalletSync}><Text style={{color:'#fff'}}>Sync</Text></TouchableOpacity>
+            <TouchableOpacity style={{flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#ccc'}} onPress={() => setSyncModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
+            <TouchableOpacity style={{flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#10b981'}} onPress={handleWalletSync}><Text style={{color:'#fff', fontWeight: 'bold'}}>Sync</Text></TouchableOpacity>
           </View>
         </View></View>
+      </Modal>
+
+      {/* Add/Edit Expense Modal */}
+      <Modal visible={expenseModalVisible} animationType="slide" transparent>
+        <View style={{flex:1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end'}}>
+          <View style={{backgroundColor: '#f8fafc', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, maxHeight: '90%'}}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={[styles.rowBetween, {marginBottom: 15}]}>
+                <Text style={{fontSize: 18, fontWeight: 'bold'}}>{editingId ? 'Edit Entry' : 'New Expense'}</Text>
+                <TouchableOpacity onPress={() => setExpenseModalVisible(false)}><Text style={{fontSize: 24, color: 'red'}}>×</Text></TouchableOpacity>
+              </View>
+
+              <View style={styles.row}>
+                <TouchableOpacity style={[styles.dateSelector, {flex: 1}]} onPress={() => setShowDatePicker(true)}>
+                  <Text style={{color: '#000'}}>{isDateSelected ? `📅 ${dateObj.toLocaleDateString('en-GB')}` : '📅 Select Date'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.typeToggle, {backgroundColor: txType === 'Debit' ? '#fee2e2' : '#dcfce7'}]} onPress={() => setTxType(txType === 'Debit' ? 'Credit' : 'Debit')}><Text style={{color: txType === 'Debit' ? '#ef4444' : '#22c55e', fontWeight: 'bold'}}>{txType.toUpperCase()}</Text></TouchableOpacity>
+              </View>
+              {showDatePicker && (<DateTimePicker value={dateObj} mode="date" display="default" onChange={(e, d) => { setShowDatePicker(false); if(d) {setDateObj(d); setIsDateSelected(true);} }} />)}
+              
+              <View style={[styles.row, {marginTop:10}]}>
+                <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={country} onValueChange={setCountry}>
+                  <Picker.Item label="Select Country" value="" />{LOCATIONS.map(l => <Picker.Item key={l.country} label={l.country} value={l.country} />)}
+                </Picker></View>
+                <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={city} onValueChange={setCity}>
+                  <Picker.Item label="Select City" value="" />{country ? LOCATIONS.find(l => l.country === country)?.cities.map(c => <Picker.Item key={c} label={c} value={c} />) : null}
+                </Picker></View>
+              </View>
+
+              <TextInput style={[styles.input, {marginVertical: 10, color:'#000'}]} placeholder="Description" placeholderTextColor="#94a3b8" value={description} onChangeText={setDescription} />
+              
+              <View style={styles.row}>
+                <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={category} onValueChange={setCategory}>
+                  <Picker.Item label="Select Category" value="" />{CATEGORIES.map(c => <Picker.Item key={c} label={c} value={c} />)}
+                </Picker></View>
+                <TextInput style={[styles.input, {flex: 1, color:'#000'}]} placeholder="Amount" placeholderTextColor="#94a3b8" keyboardType="numeric" value={amount1} onChangeText={setAmount1} />
+              </View>
+
+              {category === "🎟️ Other" && (<TextInput style={[styles.input, {marginTop: 10, borderColor:'#10b981', borderWidth:1, color:'#000'}]} placeholder="Describe other category..." placeholderTextColor="#94a3b8" value={customCategory} onChangeText={setCustomCategory} />)}
+
+              <View style={[styles.row, {marginTop:10}]}>
+                <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={currency1} onValueChange={setCurrency1}>
+                  <Picker.Item label="Select Currency" value="" />{CURRENCIES.map(c => <Picker.Item key={c.value} label={c.label} value={c.value} />)}
+                </Picker></View>
+                <View style={styles.halfPicker}><Picker style={{color:'#000'}} selectedValue={paymentMethod} onValueChange={setPaymentMethod}>
+                  <Picker.Item label="Select Payment" value="" />{PAYMENTS.map(p => <Picker.Item key={p} label={p} value={p} />)}
+                </Picker></View>
+              </View>
+
+              {appSettings.showSplit && (
+                <>
+                  <View style={[styles.rowBetween, {marginTop: 15}]}>
+                    <Text style={{fontWeight:'bold', color:'#000'}}>Split with Friends?</Text>
+                    <TouchableOpacity onPress={() => setIsSplit(!isSplit)} style={[styles.splitToggle, isSplit && {backgroundColor: '#3b82f6'}]}><Text style={{color: isSplit ? '#fff' : '#000'}}>👥 {isSplit ? 'YES' : 'NO'}</Text></TouchableOpacity>
+                  </View>
+                  {isSplit && <TextInput style={[styles.input, {marginTop: 10, color:'#000', borderColor: '#3b82f6', borderWidth: 1}]} placeholder="Names (e.g. Ajay, Rahul)" placeholderTextColor="#94a3b8" value={splitNames} onChangeText={setSplitNames} />}
+                </>
+              )}
+
+              <TouchableOpacity style={[styles.submitBtn, {marginBottom: 40}]} onPress={handleSaveExpense}><Text style={styles.btnText}>{editingId ? 'UPDATE ENTRY' : '+ SAVE EXPENSE'}</Text></TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
 
       {currentTab === 'Home' ? renderHome() : currentTab === 'Charts' ? renderCharts() : currentTab === 'Guide' ? renderGuide() : renderFeatures()}
@@ -532,7 +630,7 @@ const styles = StyleSheet.create({
   header: { padding: 20, paddingTop: 45, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
   appTitle: { fontSize: 20, fontWeight: '900', color: '#1e293b', textAlign: 'center' },
   homeCurrencyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 10 },
-  currencyPickerWrapper: { width: 140, backgroundColor: '#f1f5f9', borderRadius: 10, height: 40, justifyContent: 'center' },
+  currencyPickerWrapper: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 10, height: 40, justifyContent: 'center' },
   subText: { color: '#64748b', fontSize: 13, fontWeight: 'bold' },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -541,7 +639,6 @@ const styles = StyleSheet.create({
   iconBtn: { backgroundColor: '#f1f5f9', width: 45, height: 45, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   plusBtn: { backgroundColor: '#10b981', width: 45, height: 45, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   plusText: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
-  inputCard: { backgroundColor: '#fff', margin: 15, padding: 15, borderRadius: 20, elevation: 5 },
   input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 12, color: '#000' },
   dateSelector: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 15 },
   halfPicker: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center', marginRight: 5 },
@@ -565,6 +662,7 @@ const styles = StyleSheet.create({
   budgetContainer: { marginTop: 10 },
   budgetHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
   budgetLabel: { fontSize: 11, fontWeight: 'bold', color: '#64748b' },
+  paceMakerText: { fontSize: 11, fontWeight: 'bold', color: '#3b82f6', marginTop: 5, textAlign: 'center' },
   progressBarBg: { height: 10, backgroundColor: '#e2e8f0', borderRadius: 5, overflow: 'hidden' },
   progressBarFill: { height: '100%' },
   tabBar: { flexDirection: 'row', backgroundColor: '#fff', height: 95, borderTopWidth: 1, borderColor: '#e2e8f0', paddingBottom: 40 },
@@ -579,5 +677,6 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: '#fff', padding: 25, borderRadius: 25, width: '85%' },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#000' },
   modalInput: { backgroundColor: '#f1f5f9', padding: 15, borderRadius: 12, marginBottom: 15, color: '#000' },
-  modalBtn: { flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#10b981' }
+  fab: { position: 'absolute', bottom: 20, right: 20, backgroundColor: '#10b981', width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
+  fabText: { color: '#fff', fontSize: 32, fontWeight: 'bold', marginTop: -2 }
 });
