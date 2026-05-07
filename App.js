@@ -5,8 +5,25 @@ import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 
-const API_KEY = '8781e84bef6d6f9563c506e1'; 
+// ☁️ FIREBASE V10+ CLOUD IMPORTS ☁️
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+
+ // 🔥 2. PASTE YOUR EXACT FIREBASE KEYS BELOW 🔥
+    const firebaseConfig = {
+      apiKey:  "AIzaSyD9Bob9hhOSbJsoNU__qf3zi8WXcuki-1s",
+      authDomain: "travelexpense-52ccf.firebaseapp.com",
+      projectId: "travelexpense-52ccf",
+      storageBucket: "travelexpense-52ccf.firebasestorage.app",
+      messagingSenderId: "235580007081",
+      appId: "1:235580007081:web:32d66963c575c8dddfbfb8"
+    };
+    
+// 🚀 IGNITE THE CLOUD ENGINE
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 const CATEGORIES = ["🍔 Food", "🏨 Hotel", "🚕 Transport", "🛍️ Shopping", "🎟️ Other"];
 const PAYMENTS = ["Cash 💵", "Credit Card 💳", "Debit Card 💳", "Forex Card 💳", "UPI 📲"];
@@ -19,7 +36,7 @@ const CURRENCIES = [
 ];
 
 const LOCATIONS = [
-  { country: "🇮🇳 India", cities: ["Mumbai", "Delhi", "Goa", "Bangalore"] },
+  { country: "🇮🇳 India", cities: ["Mumbai", "Delhi", "Goa", "Bangalore", "Hyderabad", "Ahmedabad" , "Chennai"] },
   { country: "🇻🇳 Vietnam", cities: ["Hanoi", "Ho Chi Minh", "Da Nang", "Hoi An"] },
   { country: "🇺🇸 USA", cities: ["New York", "LA", "Vegas", "Chicago"] },
   { country: "🇪🇺 Europe", cities: ["Paris", "London", "Rome", "Amsterdam"] }
@@ -63,11 +80,14 @@ export default function App() {
   const [newTripName, setNewTripName] = useState('');
   const [newTripBudget, setNewTripBudget] = useState('');
   const [newTripDays, setNewTripDays] = useState('');
+  const [kittyContributors, setKittyContributors] = useState('');
   const [tripStyle, setTripStyle] = useState('solo');
   
   const [syncModalVisible, setSyncModalVisible] = useState(false);
   const [syncAmount, setSyncAmount] = useState('');
   const [syncCurrency, setSyncCurrency] = useState('VND');
+  const [showWrapped, setShowWrapped] = useState(false);
+  const [wrappedStep, setWrappedStep] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => setLoadProgress(p => p < 100 ? p + 5 : 100), 100);
@@ -89,14 +109,58 @@ export default function App() {
 
   const fetchRates = useCallback(async () => {
     try {
-      const res = await fetch(`https://v6.exchangerate-api.com/v6/${API_KEY}/latest/${masterCurrency}`);
+      // 🔄 Switched to a free, open API that requires NO keys!
+      const res = await fetch(`https://open.er-api.com/v6/latest/${masterCurrency}`);
       const d = await res.json();
-      if (d.conversion_rates) setRates(d.conversion_rates);
-    } catch (e) { console.log("Rate fetch failed"); }
+      
+      // The open API uses 'rates' instead of 'conversion_rates'
+      if (d.rates) setRates(d.rates);
+    } catch (e) { 
+      console.log("Rate fetch failed: ", e); 
+    }
   }, [masterCurrency]);
 
   useEffect(() => { loadAllData(); }, [loadAllData]);
   useEffect(() => { fetchRates(); }, [fetchRates]);
+
+// ☁️ THE LIVE CLOUD SYNC ENGINE ☁️
+  useEffect(() => {
+    // 1. Target your exact database collection
+    const q = query(collection(db, "trips"));
+    
+    // 2. Open the real-time ear to the cloud
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const cloudTrips = {};
+      
+      // 3. Group all downloaded expenses by their trip name
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        const tripName = data.tripName; 
+        
+        if (tripName) {
+          if (!cloudTrips[tripName]) cloudTrips[tripName] = [];
+          // Inject the true Firebase Document ID into the app
+          cloudTrips[tripName].push({ ...data, id: doc.id }); 
+        }
+      });
+
+      // 4. Sort the dates so the newest expenses stay at the top
+      Object.keys(cloudTrips).forEach(t => {
+        cloudTrips[t].sort((a, b) => new Date(b.date) - new Date(a.date));
+      });
+
+      // 5. Instantly overwrite the local phone screen with the new Cloud Truth
+      setTrips(prevLocalTrips => ({
+        ...prevLocalTrips,
+        ...cloudTrips
+      }));
+      
+      console.log("☁️ Live Sync: Connected and UI updated!");
+    });
+
+    // Safely disconnect the antenna if the app crashes or closes
+    return () => unsubscribe();
+  }, []);
 
   const saveData = async (t, a, m, b, d, s) => {
     await AsyncStorage.setItem('@nexus_v6_pro', JSON.stringify({ trips: t, activeTrip: a, masterCurrency: m, budgets: b, days: d, settings: s }));
@@ -137,6 +201,34 @@ export default function App() {
     return { cash, nonCash, grand: cash + nonCash, splitsTotal };
   }, [currentExpenses, getConvertedAmount]);
 
+// 🏆 TRAVEL BADGES LOGIC
+  const badges = useMemo(() => {
+    if (!currentExpenses.length) return [];
+    let b = [];
+    if (currentBudget > 0 && totals.grand <= currentBudget) b.push({ icon: '👑', title: 'Budget Master', desc: 'Stayed under budget' });
+    
+    // Added safety fallback (e.category || "") to prevent old data crashes!
+    const foodTotal = currentExpenses.filter(e => (e.category || "").includes("Food")).reduce((s, e) => s + getConvertedAmount(e.amount_1 || 0, e.currency_1), 0);
+    if (totals.grand > 0 && foodTotal / totals.grand > 0.4) b.push({ icon: '🍔', title: 'Ultimate Foodie', desc: '>40% spent on food' });
+    
+    if (totals.cash > totals.nonCash) b.push({ icon: '💵', title: 'Cash King', desc: 'Preferred physical cash' });
+    if (appSettings.showSplit && totals.splitsTotal > 0) b.push({ icon: '🏦', title: 'The Banker', desc: 'Managed the group splits' });
+    if (currentExpenses.length >= 10) b.push({ icon: '💸', title: 'Serial Spender', desc: 'Logged 10+ expenses' });
+    if (b.length === 0) b.push({ icon: '🎒', title: 'Smart Traveler', desc: 'Logged your journey' });
+    return b;
+  }, [currentExpenses, totals, currentBudget, appSettings]);
+
+  // 🎁 WRAPPED TOP EXPENSE LOGIC
+  const topExpense = useMemo(() => {
+    if (!currentExpenses.length) return null;
+    return [...currentExpenses].sort((a, b) => getConvertedAmount(b.amount_1 || 0, b.currency_1) - getConvertedAmount(a.amount_1 || 0, a.currency_1))[0];
+  }, [currentExpenses, getConvertedAmount]);
+
+  const advanceWrapped = () => {
+    if (wrappedStep < 3) setWrappedStep(wrappedStep + 1);
+    else { setShowWrapped(false); setWrappedStep(0); }
+  };
+
   const handleWalletSync = () => {
     const actualAmount = parseFloat(syncAmount);
     if (isNaN(actualAmount)) return Alert.alert('Error', 'Enter a valid amount');
@@ -161,20 +253,59 @@ export default function App() {
     Alert.alert("Wallet Synced!", "Adjustment entry created.");
   };
 
-  const handleSaveExpense = () => {
+const handleSaveExpense = async () => { 
     if (!isDateSelected || !country || !city || !description || !category || !amount1 || !currency1 || !paymentMethod) {
       return Alert.alert('Error', 'Please fill out all fields before saving.');
     }
+
+    // 1. HIDE MODAL INSTANTLY (Physically blocks the double-tap bug)
+    setExpenseModalVisible(false);
+
+    // 2. CAPTURE THE ID 
+    const currentEditId = editingId;
     const finalCat = category === "🎟️ Other" ? `🎟️ ${customCategory || 'Other'}` : category;
+    
     const exp = { 
-      id: editingId || Date.now().toString(), date: dateObj.toISOString().split('T')[0], 
+      id: currentEditId || Date.now().toString(), 
+      date: dateObj.toISOString().split('T')[0], 
       type: txType, country, city, description, category: finalCat, 
       amount_1: parseFloat(amount1), currency_1: currency1, method: paymentMethod, split: isSplit, splitNames 
     };
-    let updated = editingId ? currentExpenses.map(i => i.id === editingId ? exp : i) : [exp, ...currentExpenses];
+
+    let updated = currentEditId ? currentExpenses.map(i => i.id === currentEditId ? exp : i) : [exp, ...currentExpenses];
     updated.sort((a, b) => new Date(b.date) - new Date(a.date));
     const t = { ...trips, [activeTrip]: updated };
-    setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings);
+    
+    // 3. SAVE LOCALLY (Keeps the UI lightning fast)
+    setTrips(t);
+    saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings);
+    
+    // ☁️ 4. FIREBASE CLOUD SAVE & EDIT ☁️
+    try {
+      if (currentEditId) {
+        // ✏️ IF EDITING: Update the exact document in the cloud
+        const docRef = doc(db, "trips", currentEditId);
+        await updateDoc(docRef, {
+          ...exp,
+          tripName: activeTrip,
+          lastEdited: new Date().toISOString()
+        });
+        console.log("✏️ Cloud Edit Success!");
+      } else {
+        // ➕ IF NEW: Shoot a brand new document to the cloud
+        await addDoc(collection(db, "trips"), {
+          ...exp,
+          tripName: activeTrip,
+          user: "Shitanshu", 
+          timestamp: new Date().toISOString() 
+        });
+        console.log("✅ Cloud Save Success!");
+      }
+    } catch (error) {
+      console.error("❌ Firebase Error: ", error);
+    }
+
+    // 5. CLEAR MEMORY SAFELY AT THE VERY END
     resetForm(); 
   };
 
@@ -194,15 +325,22 @@ export default function App() {
     let s = { ...appSettings };
     
     if (modalMode === 'add') {
-      t[newTripName] = []; b[newTripName] = parseFloat(newTripBudget) || 0; d[newTripName] = parseInt(newTripDays) || 0;
+      t[newTripName] = [];
+      b[newTripName] = parseFloat(newTripBudget) || 0; 
+      d[newTripName] = parseInt(newTripDays) || 0;
       setActiveTrip(newTripName);
-      if (tripStyle === 'solo') s = { showSplit: false, showSync: false };
-      else if (tripStyle === 'group') s = { showSplit: true, showSync: false };
-      else if (tripStyle === 'pro') s = { showSplit: true, showSync: true };
+      
+      // 🚨 THE NEW KITTY SAVE LOGIC 🚨
+      if (tripStyle === 'solo') s = { showSplit: false, showSync: false, isKitty: false };
+      else if (tripStyle === 'group') s = { showSplit: true, showSync: false, isKitty: false };
+      else if (tripStyle === 'pro') s = { showSplit: true, showSync: true, isKitty: false };
+      else if (tripStyle === 'kitty') s = { showSplit: false, showSync: false, isKitty: true, contributors: kittyContributors };
+      
       setAppSettings(s);
     } else {
       if (newTripName !== activeTrip) {
-        t[newTripName] = t[activeTrip]; delete t[activeTrip];
+        t[newTripName] = t[activeTrip];
+        delete t[activeTrip];
         b[newTripName] = parseFloat(newTripBudget) || 0; delete b[activeTrip];
         d[newTripName] = parseInt(newTripDays) || 0; delete d[activeTrip];
         setActiveTrip(newTripName);
@@ -212,25 +350,55 @@ export default function App() {
       }
     }
     setTrips(t); setTripBudgets(b); setTripDays(d); saveData(t, newTripName || activeTrip, masterCurrency, b, d, s);
-    setModalVisible(false); resetForm(); 
+    setModalVisible(false);
+    resetForm(); 
   };
 
   const confirmDeleteTrip = () => {
-    Alert.alert("Delete Trip", `Are you sure you want to delete ${activeTrip}?`, [
-      { text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => {
-          const t = { ...trips }; const b = { ...tripBudgets }; const d = { ...tripDays };
-          delete t[activeTrip]; delete b[activeTrip]; delete d[activeTrip];
-          const next = Object.keys(t)[0] || ''; 
-          setTrips(t); setTripBudgets(b); setTripDays(d); setActiveTrip(next); saveData(t, next, masterCurrency, b, d, appSettings); resetForm();
+    if (!activeTrip) return;
+    Alert.alert("Delete Trip", `Are you sure you want to permanently delete "${activeTrip}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => {
+          const newTrips = { ...trips };
+          delete newTrips[activeTrip];
+          
+          const newBudgets = { ...tripBudgets };
+          delete newBudgets[activeTrip];
+          
+          const newDays = { ...tripDays };
+          delete newDays[activeTrip];
+
+          setTrips(newTrips);
+          setTripBudgets(newBudgets);
+          setTripDays(newDays);
+          
+          // CRITICAL FIX: Set the active trip to blank ("") so the app goes to the Landing Screen
+          setActiveTrip(""); 
+          saveData(newTrips, "", masterCurrency, newBudgets, newDays, appSettings);
       }}
     ]);
   };
 
   const confirmDeleteExpense = (itemId) => {
     Alert.alert("Delete Expense", "Are you sure you want to delete this entry?", [
-      { text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => {
-          const u = currentExpenses.filter(e => e.id !== itemId); const t = { ...trips, [activeTrip]: u }; 
-          setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings); resetForm();
+      { text: "Cancel", style: "cancel" }, 
+      { text: "Delete", style: "destructive", onPress: async () => { // 👈 Notice the 'async' added here!
+          
+          // ☁️ FIREBASE CLOUD DELETE ☁️
+          try {
+            // This physically deletes the document from the Google Cloud
+            await deleteDoc(doc(db, "trips", itemId));
+            console.log("🗑️ Cloud Delete Success!");
+          } catch (error) {
+            console.error("❌ Firebase Delete Error: ", error);
+          }
+
+          // We keep your local save code here so the phone feels lightning fast
+          const u = currentExpenses.filter(e => e.id !== itemId); 
+          const t = { ...trips, [activeTrip]: u }; 
+          setTrips(t); 
+          saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings); 
+          resetForm();
       }}
     ]);
   };
@@ -291,12 +459,43 @@ export default function App() {
     );
   }
 
-  const renderHome = () => (
+// 📊 CSV / EXCEL EXPORT LOGIC
+  const shareCSV = async () => {
+    try {
+      // 1. Create the Header Row for Excel
+      let csvString = "Date,City,Category,Description,Original Amount,Currency,Converted Amount,Type,Split Details\n";
+
+      // 2. Loop through every expense and create a new row
+      currentExpenses.forEach(item => {
+        const conv = getConvertedAmount(item.amount_1, item.currency_1);
+        
+        // Safety check: Wrap text in quotes so commas in descriptions don't break the Excel columns
+        const cleanCity = `"${(item.city || '').replace(/"/g, '""')}"`;
+        const cleanDesc = `"${(item.description || '').replace(/"/g, '""')}"`;
+        const cleanCat = `"${(item.category || '').replace(/"/g, '""')}"`;
+        const cleanSplit = item.split ? `"Yes (${item.splitNames})"` : `"No"`;
+
+        csvString += `${item.date},${cleanCity},${cleanCat},${cleanDesc},${item.amount_1},${item.currency_1},${conv.toFixed(2)},${item.type},${cleanSplit}\n`;
+      });
+
+      // 3. Save the file to the phone's temporary documents folder
+      const fileUri = FileSystem.documentDirectory + `${activeTrip.replace(/\s+/g, '_')}_Report.csv`;
+      await FileSystem.writeAsStringAsync(fileUri, csvString);
+
+      // 4. Open the native Share menu (WhatsApp, Email, etc.)
+      await Sharing.shareAsync(fileUri);
+    } catch (error) {
+      console.log("Error generating CSV: ", error);
+      alert("Could not generate Excel file. Try again.");
+    }
+  };
+
+const renderHome = () => (
     <View style={{flex: 1}}>
       <ScrollView ref={scrollRef} stickyHeaderIndices={[0]}>
         <View style={styles.header}>
           <View style={styles.rowBetween}>
-            <View style={{width: 24}} /> {/* Invisible spacer to balance the Gear icon perfectly */}
+            <View style={{width: 24}} /> {/* Invisible spacer */}
             <Text style={styles.appTitle}>EXPENSE TRACKER</Text>
             <TouchableOpacity onPress={() => setSettingsModalVisible(true)}><Text style={{fontSize: 24}}>⚙️</Text></TouchableOpacity>
           </View>
@@ -314,63 +513,166 @@ export default function App() {
             <View style={styles.tripPicker}><Picker style={{color:'#000'}} dropdownIconColor="#000" selectedValue={activeTrip} onValueChange={(val) => {setActiveTrip(val); resetForm();}}><Picker.Item label="Select Trip" value="" />{Object.keys(trips).map(t => <Picker.Item key={t} label={t} value={t} />)}</Picker></View>
             <TouchableOpacity style={styles.iconBtn} onPress={() => {setModalMode('edit'); setNewTripName(activeTrip); setNewTripBudget(currentBudget.toString()); setNewTripDays(currentDays.toString()); setModalVisible(true)}}><Text>✏️</Text></TouchableOpacity>
             <TouchableOpacity style={[styles.iconBtn, {backgroundColor: '#fee2e2'}]} onPress={confirmDeleteTrip}><Text>🗑️</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.plusBtn} onPress={() => {setModalMode('add'); setNewTripName(''); setNewTripBudget(''); setNewTripDays(''); setTripStyle('solo'); setModalVisible(true)}}><Text style={styles.plusText}>+</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.plusBtn} onPress={() => {setModalMode('add'); setNewTripName(''); setNewTripBudget(''); setNewTripDays(''); setTripStyle('solo'); setKittyContributors(''); setModalVisible(true)}}><Text style={styles.plusText}>+</Text></TouchableOpacity>
           </View>
 
-          <View style={styles.summaryCardCompact}>
-              <Text style={styles.legendText}>🟢 Cash: {getSymbol(masterCurrency)}{formatValue(totals.cash)}</Text>
-              <Text style={styles.legendText}>🔵 Card: {getSymbol(masterCurrency)}{formatValue(totals.nonCash)}</Text>
-              {appSettings.showSplit && totals.splitsTotal > 0 && <Text style={styles.legendText}>🟣 Splits: {getSymbol(masterCurrency)}{formatValue(totals.splitsTotal)}</Text>}
-          </View>
-          
-          {appSettings.showSync && (
-            <TouchableOpacity style={styles.syncBtn} onPress={() => {setSyncAmount(''); setSyncModalVisible(true);}}>
-                <Text style={styles.syncBtnText}>⚖️ Auto-Sync Physical Wallet</Text>
-            </TouchableOpacity>
-          )}
-          
-          <Text style={styles.grandTotalText}>Grand Total: {getSymbol(masterCurrency)}{formatValue(totals.grand)}</Text>
+{/* THE DASHBOARD LANDING SCREEN */}
+          {activeTrip === "" ? (
+            <View style={{paddingTop: 40, alignItems: 'center', paddingHorizontal: 20}}>
+              <Text style={{fontSize: 60, marginBottom: 10}}>✈️</Text>
+              <Text style={{fontSize: 24, fontWeight: '900', color: '#1e293b', textAlign: 'center'}}>Where to next?</Text>
+              <Text style={{fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 10, marginBottom: 30}}>
+                Select an existing itinerary from the dropdown above, or start a brand new journey.
+              </Text>
+              
+              <TouchableOpacity 
+                style={{backgroundColor: '#3b82f6', width: '100%', padding: 20, borderRadius: 16, alignItems: 'center', shadowColor: '#3b82f6', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5}}
+                onPress={() => {setModalMode('add'); setNewTripName(''); setNewTripBudget(''); setNewTripDays(''); setTripStyle('solo'); setKittyContributors(''); setModalVisible(true)}}>
+                <Text style={{color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 1}}>➕ CREATE NEW TRIP</Text>
+              </TouchableOpacity>
 
-          {currentBudget > 0 && (
-            <View style={styles.budgetContainer}>
-              <View style={styles.budgetHeader}><Text style={styles.budgetLabel}>Budget Status</Text><Text style={styles.budgetLabel}>{getSymbol(masterCurrency)}{formatValue(totals.grand)} / {formatValue(currentBudget)}</Text></View>
-              <View style={styles.progressBarBg}><View style={[styles.progressBarFill, { width: `${Math.min(totals.grand/currentBudget, 1)*100}%`, backgroundColor: (totals.grand/currentBudget) > 0.9 ? '#ef4444' : '#10b981' }]} /></View>
-              {currentDays > 0 && (
-                <Text style={styles.paceMakerText}>💡 Safe to spend today: {getSymbol(masterCurrency)}{formatValue(Math.max(0, (currentBudget - totals.grand) / currentDays))} / day</Text>
+              {Object.keys(trips).length > 0 && (
+                <View style={{width: '100%', marginTop: 30}}>
+                  <Text style={{fontSize: 12, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 10}}>Recent Destinations</Text>
+                  {Object.keys(trips).slice(0, 3).map(tripName => (
+                    <TouchableOpacity key={tripName} style={{backgroundColor: '#f8fafc', padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#e2e8f0', flexDirection: 'row', justifyContent: 'space-between'}} onPress={() => setActiveTrip(tripName)}>
+                      <Text style={{fontWeight: 'bold', color: '#334155'}}>{tripName}</Text>
+                      <Text style={{color: '#3b82f6'}}>→</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               )}
+            </View>
+          ) : (
+            /* THE STANDARD EXPENSE TRACKER UI */
+            <View style={{flex: 1}}>
+              {!appSettings.isKitty && (
+                <View style={styles.summaryCardCompact}>
+                    <Text style={styles.legendText}>🟢 Cash: {getSymbol(masterCurrency)}{formatValue(totals.cash)}</Text>
+                    <Text style={styles.legendText}>🔵 Card: {getSymbol(masterCurrency)}{formatValue(totals.nonCash)}</Text>
+                    {(appSettings.showSplit && totals.splitsTotal > 0) ? <Text style={styles.legendText}>🟣 Splits: {getSymbol(masterCurrency)}{formatValue(totals.splitsTotal)}</Text> : null}
+                </View>
+              )}
+              
+              {appSettings.showSync && !appSettings.isKitty && (
+                <TouchableOpacity style={styles.syncBtn} onPress={() => {setSyncAmount(''); setSyncModalVisible(true);}}>
+                    <Text style={styles.syncBtnText}>⚖️ Auto-Sync Physical Wallet</Text>
+                </TouchableOpacity>
+              )}
+              
+              {!appSettings.isKitty && (
+                <Text style={styles.grandTotalText}>Grand Total: {getSymbol(masterCurrency)}{formatValue(totals.grand)}</Text>
+              )}
+
+              {currentBudget > 0 ? (
+                <View style={styles.budgetContainer}>
+                  {appSettings.isKitty ? (
+                    <View style={{backgroundColor: '#f8fafc', padding: 18, borderRadius: 20, marginTop: 10, borderWidth: 1, borderColor: '#e2e8f0', elevation: 2}}>
+                      <View style={styles.rowBetween}>
+                        <Text style={{fontSize: 14, fontWeight: '900', color: '#64748b', textTransform: 'uppercase'}}>Shared Kitty</Text>
+                        <TouchableOpacity 
+                          style={{backgroundColor: '#3b82f6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10}}
+                          onPress={() => {
+                            setModalMode('edit'); 
+                            setNewTripName(activeTrip); 
+                            setNewTripBudget(currentBudget.toString()); 
+                            setNewTripDays(currentDays.toString()); 
+                            setModalVisible(true);
+                          }}>
+                          <Text style={{color: '#fff', fontSize: 11, fontWeight: '900'}}>➕ TOP-UP</Text>
+                        </TouchableOpacity>
+                      </View>
+                      
+                      <Text style={{fontSize: 32, fontWeight: '900', color: (currentBudget - totals.grand) < (currentBudget * 0.15) ? '#ef4444' : '#10b981', marginVertical: 10}}>
+                        {getSymbol(masterCurrency)}{formatValue(currentBudget - totals.grand)}
+                      </Text>
+                      
+                      <View style={styles.progressBarBg}>
+                        <View style={[styles.progressBarFill, { width: `${Math.max(0, ((currentBudget - totals.grand)/currentBudget))*100}%`, backgroundColor: ((currentBudget - totals.grand)/currentBudget) < 0.15 ? '#ef4444' : '#10b981' }]} />
+                      </View>
+                      <Text style={[styles.paceMakerText, {marginTop: 10, color: '#64748b'}]}>👥 Contributors: {appSettings.contributors || "The Group"}</Text>
+                    </View>
+                  ) : (
+                    <View>
+                      <View style={styles.budgetHeader}>
+                        <Text style={styles.budgetLabel}>Budget Status</Text>
+                        <Text style={styles.budgetLabel}>{getSymbol(masterCurrency)}{formatValue(totals.grand)} / {formatValue(currentBudget)}</Text>
+                      </View>
+                      <View style={styles.progressBarBg}>
+                        <View style={[styles.progressBarFill, { width: `${Math.min(totals.grand/currentBudget, 1)*100}%`, backgroundColor: (totals.grand/currentBudget) > 0.9 ? '#ef4444' : '#10b981' }]} />
+                      </View>
+                      
+                      {currentDays > 0 ? (() => {
+                        const daysLogged = new Set(currentExpenses.map(e => e.date)).size || 1;
+                        const daysRemaining = Math.max(1, currentDays - daysLogged + 1);
+                        const originalDaily = currentBudget / currentDays;
+                        const expectedSpendSoFar = originalDaily * daysLogged;
+                        const rolloverAmount = expectedSpendSoFar - totals.grand;
+                        const newDaily = Math.max(0, (currentBudget - totals.grand) / daysRemaining);
+                        
+                        return (
+                          <View style={{marginTop: 12, backgroundColor: '#f0fdf4', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#bbf7d0'}}>
+                            <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+                              <Text style={{fontWeight: '900', color: '#166534', fontSize: 13}}>🎯 Pace-Maker Active</Text>
+                              {rolloverAmount > 0 ? (
+                                <Text style={{backgroundColor: '#dcfce7', color: '#15803d', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, fontSize: 10, fontWeight: 'bold'}}>
+                                  +{getSymbol(masterCurrency)}{formatValue(rolloverAmount)} SAVED
+                                </Text>
+                              ) : rolloverAmount < 0 ? (
+                                <Text style={{backgroundColor: '#fee2e2', color: '#b91c1c', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, fontSize: 10, fontWeight: 'bold'}}>
+                                  OVERSPENT
+                                </Text>
+                              ) : null}
+                            </View>
+                            <Text style={{color: '#15803d', fontSize: 12, marginTop: 6, fontWeight: '500'}}>
+                              Safe to spend today: <Text style={{fontWeight: '900'}}>{getSymbol(masterCurrency)}{formatValue(newDaily)}</Text>
+                            </Text>
+                          </View>
+                        );
+                      })() : null}
+                    </View>
+                  )}
+                </View>
+              ) : null}
+
+              <View style={{height: 15}} />
+              
+              {currentExpenses.map(item => {
+                const conv = getConvertedAmount(item.amount_1, item.currency_1);
+                const rate = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(4) : "1.00";
+                const sf = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
+                return (
+                  <TouchableOpacity key={item.id} style={styles.card} onPress={() => startEdit(item)}>
+                    <View style={{flex: 1}}>
+                        <Text style={styles.cardDate}>{item.date} • {item.city}</Text>
+                        <Text style={styles.cardDesc}>{item.description}</Text>
+                        <Text style={styles.cardCategory}>Category: {item.category}</Text>
+                        <Text style={styles.cardOrigAmt}>Original: {formatValue(item.amount_1)} {item.currency_1}</Text>
+                        <Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text>
+                        {item.split && <Text style={styles.splitSubText}>👥 Share: {getSymbol(masterCurrency)}{formatValue(conv/sf)} per person</Text>}
+                    </View>
+                    <View style={{alignItems: 'flex-end'}}>
+                        <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text>
+                        <TouchableOpacity onPress={() => confirmDeleteExpense(item.id)}><Text style={{color:'red',fontSize:20, marginTop: 10}}>🗑️</Text></TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              
+              <TouchableOpacity style={styles.exportBtn} onPress={sharePDF}><Text style={styles.btnText}>📤 EXPORT PDF REPORT</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.exportBtn, {backgroundColor: '#10b981', marginTop: 10}]} onPress={shareCSV}><Text style={styles.btnText}>📊 EXPORT EXCEL (CSV)</Text></TouchableOpacity>
+              <View style={{height: 150}} />
             </View>
           )}
         </View>
-
-        <View style={{height: 15}} />
-        {currentExpenses.map(item => {
-          const conv = getConvertedAmount(item.amount_1, item.currency_1);
-          const rate = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(4) : "1.00";
-          const sf = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
-          return (
-            <TouchableOpacity key={item.id} style={styles.card} onPress={() => startEdit(item)}>
-              <View style={{flex: 1}}>
-                  <Text style={styles.cardDate}>{item.date} • {item.city}</Text>
-                  <Text style={styles.cardDesc}>{item.description}</Text>
-                  <Text style={styles.cardCategory}>Category: {item.category}</Text>
-                  <Text style={styles.cardOrigAmt}>Original: {formatValue(item.amount_1)} {item.currency_1}</Text>
-                  <Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text>
-                  {item.split && <Text style={styles.splitSubText}>👥 Share: {getSymbol(masterCurrency)}{formatValue(conv/sf)} per person</Text>}
-              </View>
-              <View style={{alignItems: 'flex-end'}}>
-                  <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text>
-                  <TouchableOpacity onPress={() => confirmDeleteExpense(item.id)}><Text style={{color:'red',fontSize:20, marginTop: 10}}>🗑️</Text></TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-        <TouchableOpacity style={styles.exportBtn} onPress={sharePDF}><Text style={styles.btnText}>📤 EXPORT PDF REPORT</Text></TouchableOpacity>
-        <View style={{height: 150}} />
       </ScrollView>
 
-      <TouchableOpacity style={styles.fab} onPress={() => { resetForm(); setExpenseModalVisible(true); }}>
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
+      {/* ONLY SHOW THE FLOATING ACTION BUTTON IF A TRIP IS SELECTED */}
+      {activeTrip !== "" && (
+        <TouchableOpacity style={styles.fab} onPress={() => { resetForm(); setExpenseModalVisible(true); }}>
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -385,12 +687,42 @@ export default function App() {
     return (
         <ScrollView style={{flex:1, padding: 20}}>
           <View style={{height: 40}} />
+          
+          {/* 🎁 THE TRIP WRAPPED BUTTON 🎁 */}
+          {currentExpenses.length > 0 && (
+            <TouchableOpacity style={{backgroundColor: '#8b5cf6', padding: 20, borderRadius: 20, alignItems: 'center', marginBottom: 20, shadowColor: '#8b5cf6', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.4, shadowRadius: 10, elevation: 5}} onPress={() => {setWrappedStep(0); setShowWrapped(true);}}>
+              <Text style={{color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 1}}>🎁 PLAY TRIP WRAPPED</Text>
+              <Text style={{color: '#e2e8f0', fontSize: 12, marginTop: 4}}>Your personalized journey summary</Text>
+            </TouchableOpacity>
+          )}
+
           <Text style={[styles.appTitle, {marginBottom: 20}]}>ANALYTICS 📊</Text>
+
+          {/* 🏆 THE BADGES SECTION 🏆 */}
+          {badges.length > 0 && (
+            <View style={styles.summaryCard}>
+              <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 15}}>
+                <Text style={{fontWeight: 'bold', color: '#1e293b', fontSize: 16}}>Travel Badges 🏆</Text>
+                <Text style={{color: '#3b82f6', fontWeight: '900', fontSize: 12}}>
+                  {badges[0]?.title === 'Smart Traveler' ? 0 : badges.length} / 5 UNLOCKED
+                </Text>
+              </View>
+              <View style={{flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between'}}>
+                {badges.map((b, i) => (
+                  <View key={i} style={{width: '48%', backgroundColor: '#f8fafc', padding: 15, borderRadius: 12, marginBottom: 10, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0'}}>
+                    <Text style={{fontSize: 32}}>{b.icon}</Text>
+                    <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 13, marginTop: 8, textAlign: 'center'}}>{b.title}</Text>
+                    <Text style={{fontSize: 10, color: '#64748b', textAlign: 'center', marginTop: 4}}>{b.desc}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
           
           <View style={styles.summaryCard}>
             <Text style={styles.summaryTitle}>Category Spending</Text>
             {CATEGORIES.map(cat => {
-              const total = currentExpenses.filter(e => e.category.includes(cat)).reduce((s, e) => s + getConvertedAmount(e.amount_1, e.currency_1), 0);
+              const total = currentExpenses.filter(e => (e.category || "").includes(cat)).reduce((s, e) => s + getConvertedAmount(e.amount_1 || 0, e.currency_1), 0);
               const perc = totals.grand > 0 ? (total / totals.grand) * 100 : 0;
               return (
                 <View key={cat} style={{marginBottom: 15}}><View style={styles.rowBetween}><Text style={{color:'#000',fontWeight:'bold'}}>{cat}</Text><Text style={{color:'#000'}}>{perc.toFixed(0)}%</Text></View><View style={styles.progressBarBg}><View style={[styles.progressBarFill, {width: `${perc}%`, backgroundColor: '#3b82f6'}]} /></View></View>
@@ -398,7 +730,7 @@ export default function App() {
             })}
           </View>
 
-          {appSettings.showSplit && (
+          {appSettings.showSplit && !appSettings.isKitty && (
             <View style={styles.summaryCard}>
               <Text style={styles.summaryTitle}>Who Owes You? 👥</Text>
               {Object.keys(settlements).length > 0 ? Object.entries(settlements).map(([n, a]) => (
@@ -484,6 +816,30 @@ export default function App() {
         <Text style={styles.summaryTitle}>📤 Professional Reporting</Text>
         <Text style={styles.featureListText}>• One-Tap PDF Export</Text>
         <Text style={styles.featureListText}>• Detailed Documentation when exported</Text>
+        <Text style={styles.featureListText}>• CSV / Excel Export </Text>
+        <Text style={styles.featureListText}>• Instantly export a raw data spreadsheet for your corporate accounting department.</Text>
+      </View>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>🚀 Premium Features </Text>
+        <Text style={styles.featureListText}>
+          <Text style={{fontWeight: 'bold'}}>• Shared Kitty Mode: </Text>
+          Transform your trip into a digital group envelope. Hide individual card/cash splits and focus purely on the group's remaining pool of money.
+        </Text>
+        
+        <Text style={styles.featureListText}>
+           <Text style={{fontWeight: 'bold'}}>• The Pace-Maker: </Text>
+           Our smart engine monitors your daily spend. If you save money on Monday, it automatically rolls over your savings to increase your daily budget for Tuesday!
+        </Text>
+        
+        <Text style={styles.featureListText}>
+           <Text style={{fontWeight: 'bold'}}>• Travel Badges: </Text>
+           Gamify your spending! The app secretly analyzes your habits to award you badges like 'Ultimate Foodie' and 'Cash King' in your Analytics tab.
+        </Text>
+        
+        <Text style={styles.featureListText}>
+           <Text style={{fontWeight: 'bold'}}>• Trip Wrapped: </Text>
+           Relive your journey! Tap the purple button in Analytics to view an Instagram-style, shareable summary of your entire trip.
+        </Text>
       </View>
       <View style={{height: 120}} />
     </ScrollView>
@@ -491,29 +847,89 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Smart Trip Modal */}
-      <Modal visible={modalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}><View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>{modalMode === 'add' ? 'New Trip' : 'Edit Trip'}</Text>
-          <TextInput style={styles.modalInput} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name" placeholderTextColor="#94a3b8" />
-          <TextInput style={styles.modalInput} value={newTripBudget} onChangeText={setNewTripBudget} placeholder="Budget (Optional)" placeholderTextColor="#94a3b8" keyboardType="numeric" />
-          <TextInput style={styles.modalInput} value={newTripDays} onChangeText={setNewTripDays} placeholder="Trip Duration in Days (Optional)" placeholderTextColor="#94a3b8" keyboardType="numeric" />
-          
-          {modalMode === 'add' && (
-            <View style={{backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center', marginBottom: 15}}>
-              <Picker style={{color:'#000'}} selectedValue={tripStyle} onValueChange={setTripStyle}>
-                <Picker.Item label="Solo Tracker (Clean UI)" value="solo" />
-                <Picker.Item label="Group Trip (Splits & WhatsApp)" value="group" />
-                <Picker.Item label="Power User (Splits + Wallet Sync)" value="pro" />
-              </Picker>
+
+      {/* 🎁 INSTAGRAM-STYLE TRIP WRAPPED OVERLAY 🎁 */}
+      <Modal visible={showWrapped} transparent animationType="fade">
+        <TouchableOpacity activeOpacity={1} onPress={advanceWrapped} style={{flex: 1, backgroundColor: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b'][wrappedStep], justifyContent: 'center', alignItems: 'center', padding: 30}}>
+          {wrappedStep === 0 && (
+            <View style={{alignItems: 'center'}}>
+              <Text style={{fontSize: 80}}>✈️</Text>
+              <Text style={{color: '#fff', fontSize: 36, fontWeight: '900', textAlign: 'center', marginTop: 20}}>{activeTrip}</Text>
+              <Text style={{color: '#fff', fontSize: 24, fontWeight: 'bold', marginTop: 5}}>Wrapped</Text>
+              <Text style={{color: '#fff', fontSize: 16, marginTop: 40, opacity: 0.8}}>Tap anywhere to begin</Text>
             </View>
           )}
+          {wrappedStep === 1 && (
+            <View style={{alignItems: 'center'}}>
+              <Text style={{fontSize: 80}}>💸</Text>
+              <Text style={{color: '#fff', fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginTop: 20}}>You spent a total of</Text>
+              <Text style={{color: '#fff', fontSize: 44, fontWeight: '900', marginTop: 10}}>{getSymbol(masterCurrency)}{formatValue(totals.grand)}</Text>
+            </View>
+          )}
+          {wrappedStep === 2 && topExpense && (
+            <View style={{alignItems: 'center'}}>
+              <Text style={{fontSize: 80}}>🛍️</Text>
+              <Text style={{color: '#fff', fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginTop: 20}}>Your Biggest Splurge</Text>
+              <Text style={{color: '#fff', fontSize: 32, fontWeight: '900', marginTop: 10, textAlign: 'center'}}>{topExpense.description}</Text>
+              <Text style={{color: '#fff', fontSize: 20, marginTop: 10, opacity: 0.9}}>{getSymbol(masterCurrency)}{formatValue(getConvertedAmount(topExpense.amount_1, topExpense.currency_1))}</Text>
+            </View>
+          )}
+          {wrappedStep === 3 && (
+            <View style={{alignItems: 'center', width: '100%'}}>
+              <Text style={{fontSize: 60}}>🏆</Text>
+              <Text style={{color: '#fff', fontSize: 32, fontWeight: '900', textAlign: 'center', marginTop: 20, marginBottom: 20}}>Badges Earned</Text>
+              <View style={{flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center'}}>
+                {badges.map((b, i) => (
+                  <View key={i} style={{alignItems: 'center', margin: 15, width: '35%'}}>
+                    <Text style={{fontSize: 45}}>{b.icon}</Text>
+                    <Text style={{color: '#fff', fontWeight: '900', fontSize: 14, marginTop: 8, textAlign: 'center'}}>{b.title}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={{color: '#fff', fontSize: 16, marginTop: 50, opacity: 0.8}}>Tap to finish</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </Modal>
 
-          <View style={styles.row}>
-            <TouchableOpacity style={{flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#ccc'}} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
-            <TouchableOpacity style={{flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#10b981'}} onPress={handleTripSave}><Text style={{color:'#fff', fontWeight: 'bold'}}>Save</Text></TouchableOpacity>
+      {/* Smart Trip Modal */}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{modalMode === 'add' ? 'New Trip' : 'Edit Trip'}</Text>
+            
+            <TextInput style={styles.modalInput} value={newTripName} onChangeText={setNewTripName} placeholder="Trip Name" placeholderTextColor="#94a3b8" />
+            
+            {/* 🚨 THE MODE SELECTOR (Moved up for better UX) 🚨 */}
+            {modalMode === 'add' && (
+              <View style={{backgroundColor: '#f1f5f9', borderRadius: 12, height: 50, justifyContent: 'center', marginBottom: 15}}>
+                <Picker style={{color:'#000'}} selectedValue={tripStyle} onValueChange={setTripStyle}>
+                  <Picker.Item label="Solo Tracker (Clean UI)" value="solo" />
+                  <Picker.Item label="Group Trip (Splits & WhatsApp)" value="group" />
+                  <Picker.Item label="Power User (Splits + Wallet Sync)" value="pro" />
+                  <Picker.Item label="Trip Kitty (Shared Group Pot) 💰" value="kitty" />
+                </Picker>
+              </View>
+            )}
+
+            {/* 🚨 DYNAMIC INPUTS BASED ON MODE 🚨 */}
+            {tripStyle === 'kitty' ? (
+              <>
+                <TextInput style={styles.modalInput} value={newTripBudget} onChangeText={setNewTripBudget} placeholder="Total Kitty Size (e.g. 30000)" placeholderTextColor="#94a3b8" keyboardType="numeric" />
+                <TextInput style={styles.modalInput} value={kittyContributors} onChangeText={setKittyContributors} placeholder="Contributors (e.g. Rahul, Ajay)" placeholderTextColor="#94a3b8" />
+              </>
+            ) : (
+              <TextInput style={styles.modalInput} value={newTripBudget} onChangeText={setNewTripBudget} placeholder="Personal Budget (Optional)" placeholderTextColor="#94a3b8" keyboardType="numeric" />
+            )}
+
+            <TextInput style={styles.modalInput} value={newTripDays} onChangeText={setNewTripDays} placeholder="Trip Duration in Days (Optional)" placeholderTextColor="#94a3b8" keyboardType="numeric" />
+            
+            <View style={styles.row}>
+              <TouchableOpacity style={{flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#ccc'}} onPress={() => setModalVisible(false)}><Text>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity style={{flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5, backgroundColor: '#10b981'}} onPress={handleTripSave}><Text style={{color:'#fff', fontWeight: 'bold'}}>Save</Text></TouchableOpacity>
+            </View>
           </View>
-        </View></View>
+        </View>
       </Modal>
 
       {/* Settings Modal */}
