@@ -19,15 +19,15 @@ import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, query, whe
 // =========================================================================
 // 🔥 2. FIREBASE CONFIGURATION
 // =========================================================================
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey:  "KEY",
-  authDomain: "IEOE",
-  projectId: "adfsva",
-  storageBucket: "trwer",
-  messagingSenderId: "afv",
-  appId: "ac"
+apiKey: "AIzaSyD9Bob9hhOSbJsoNU__qf3zi8WXcuki-1s",
+authDomain: "travelexpense-52ccf.firebaseapp.com",
+projectId: "travelexpense-52ccf",
+storageBucket: "travelexpense-52ccf.firebasestorage.app",
+messagingSenderId: "235580007081",
+appId: "1:235580007081:web:32d66963c575c8dddfbfb8"
 };
-
 // INITIALIZATION REFACTOR: Prevents Hot-Reload Crashes & Offline Corruption
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const db = initializeFirestore(app, {
