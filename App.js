@@ -285,6 +285,49 @@ export default function App() {
   // =========================================================================
   // 💾 8. CORE ACTIONS (Create, Update, Delete)
   // =========================================================================
+  
+  // 🚀 SECRET MIGRATION FUNCTION
+  const migrateOldDataToCloud = async () => {
+    try {
+      Alert.alert("Migration Started", "Please wait while we blast your old trips to the cloud...");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+      // 1. Look into the old, dormant v6 memory
+      const v6Data = await AsyncStorage.getItem('@nexus_v6_pro');
+      if (!v6Data) {
+        Alert.alert("Notice", "No offline data found to migrate!");
+        return;
+      }
+
+      // 2. Unpack the old data
+      const parsed = JSON.parse(v6Data);
+      const oldTrips = parsed.trips || {};
+      let migratedCount = 0;
+
+      // 3. Loop through every old trip and upload every expense to Firebase
+      for (const tripName of Object.keys(oldTrips)) {
+        const expenses = oldTrips[tripName];
+        for (const exp of expenses) {
+          // Send it to the cloud!
+          await addDoc(collection(db, "trips"), {
+            ...exp,
+            tripName: tripName,
+            migratedAt: new Date().toISOString()
+          });
+          migratedCount++;
+        }
+      }
+
+      // 4. Success!
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("🎉 Migration Complete!", `Successfully rescued ${migratedCount} old expenses to the cloud! They will appear on your screen momentarily.`);
+      
+    } catch (error) {
+      console.error("Migration error:", error);
+      Alert.alert("Error", "Something went wrong during migration.");
+    }
+  };
+  
   const handleWalletSync = () => {
     const actualAmount = parseFloat(syncAmount);
     if (isNaN(actualAmount)) return Alert.alert('Error', 'Enter a valid amount');
@@ -1006,6 +1049,13 @@ export default function App() {
               <Text style={{fontWeight: 'bold', color: '#1e293b'}}>Enable Wallet Auto-Sync</Text>
               <Switch value={appSettings.showSync} onValueChange={(val) => { const s = {...appSettings, showSync: val}; setAppSettings(s); saveData(trips, activeTrip, masterCurrency, tripBudgets, tripDays, s); }} />
             </View>
+        {/* 🚀 SECRET MIGRATION BUTTON */}
+            <TouchableOpacity style={{ backgroundColor: '#8b5cf6', padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 15, elevation: 2 }} 
+              onPress={migrateOldDataToCloud}>
+             <View>   
+              <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>☁️ RESCUE V6 DATA TO CLOUD</Text>
+              </View> 
+            </TouchableOpacity>
             <TouchableOpacity style={{ backgroundColor: '#f8fafc', padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 25, borderWidth: 1, borderColor: '#e2e8f0' }} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setSettingsModalVisible(false); setTimeout(() => setStashModalVisible(true), 300); }}>
               <View>
                 <Text style={{ fontWeight: 'bold', color: '#1e293b', fontSize: 16 }}>💱 Foreign Cash Stash</Text>
