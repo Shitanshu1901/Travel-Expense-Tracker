@@ -2,7 +2,7 @@
 // 📦 1. IMPORTS & DEPENDENCIES
 // =========================================================================
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, ScrollView, Modal, Platform, Image, Switch, Linking } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, ScrollView, Modal, Platform, Image, Switch, Linking, KeyboardAvoidingView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -19,16 +19,15 @@ import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, query, whe
 // =========================================================================
 // 🔥 2. FIREBASE CONFIGURATION
 // =========================================================================
-// Your web app's Firebase configuration
 const firebaseConfig = {
-apiKey: "AIzaSyD9Bob9hhOSbJsoNU__qf3zi8WXcuki-1s",
-authDomain: "travelexpense-52ccf.firebaseapp.com",
-projectId: "travelexpense-52ccf",
-storageBucket: "travelexpense-52ccf.firebasestorage.app",
-messagingSenderId: "235580007081",
-appId: "1:235580007081:web:32d66963c575c8dddfbfb8"
+  apiKey: "AIzaSyD9Bob9hhOSbJsoNU__qf3zi8WXcuki-1s",
+  authDomain: "travelexpense-52ccf.firebaseapp.com",
+  projectId: "travelexpense-52ccf",
+  storageBucket: "travelexpense-52ccf.firebasestorage.app",
+  messagingSenderId: "235580007081",
+  appId: "1:235580007081:web:32d66963c575c8dddfbfb8"
 };
-// INITIALIZATION REFACTOR: Prevents Hot-Reload Crashes & Offline Corruption
+
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const db = initializeFirestore(app, {
   localCache: persistentLocalCache({})
@@ -57,7 +56,6 @@ const LOCATIONS = [
 // 📱 4. MAIN APP COMPONENT
 // =========================================================================
 export default function App() {
-  // 🧠 4A. APP INFRASTRUCTURE STATE
   const scrollRef = useRef(null);
   const [appLoaded, setAppLoaded] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -66,7 +64,6 @@ export default function App() {
   const [appSettings, setAppSettings] = useState({ showSplit: false, showSync: false });
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
 
-  // 🧠 4B. CORE TRIP STATE
   const [trips, setTrips] = useState({});
   const [tripBudgets, setTripBudgets] = useState({});
   const [tripDays, setTripDays] = useState({});
@@ -74,10 +71,9 @@ export default function App() {
   const [masterCurrency, setMasterCurrency] = useState('INR');
   const [rates, setRates] = useState({});
 
-  // 🧠 4C. EXPENSE FORM STATE
   const [expenseModalVisible, setExpenseModalVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [editingFirebaseId, setEditingFirebaseId] = useState(null); // FIX 6: Edit Tracking
+  const [editingFirebaseId, setEditingFirebaseId] = useState(null); 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateObj, setDateObj] = useState(new Date());
   const [isDateSelected, setIsDateSelected] = useState(false);
@@ -93,7 +89,6 @@ export default function App() {
   const [isSplit, setIsSplit] = useState(false);
   const [splitNames, setSplitNames] = useState('');
 
-  // 🧠 4D. TRIP CREATION STATE
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState('add');
   const [newTripName, setNewTripName] = useState('');
@@ -102,7 +97,6 @@ export default function App() {
   const [kittyContributors, setKittyContributors] = useState('');
   const [tripStyle, setTripStyle] = useState('solo');
 
-  // 🧠 4E. SPECIAL FEATURES STATE
   const [syncModalVisible, setSyncModalVisible] = useState(false);
   const [syncAmount, setSyncAmount] = useState('');
   const [syncCurrency, setSyncCurrency] = useState('VND');
@@ -145,7 +139,6 @@ export default function App() {
   // 💾 6. DATA FETCHING & CLOUD SYNC
   // =========================================================================
   const loadAllData = useCallback(async () => {
-    // FIX 3: CHANGE STORAGE VERSION to v7 to clear old corrupted state
     const v7 = await AsyncStorage.getItem('@nexus_v7_pro');
     if (v7) {
       const p = JSON.parse(v7);
@@ -169,39 +162,22 @@ export default function App() {
   useEffect(() => { loadAllData(); }, [loadAllData]);
   useEffect(() => { fetchRates(); }, [fetchRates]);
 
-  // FIX 4: CLOUD SYNC ENGINE REFACTOR
   useEffect(() => {
     const q = query(collection(db, "trips"));
-    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const cloudTrips = {};
-
       snapshot.forEach((firebaseDoc) => {
         const data = firebaseDoc.data();
         const tripName = data.tripName;
-
         if (!tripName) return;
-
-        if (!cloudTrips[tripName]) {
-          cloudTrips[tripName] = [];
-        }
-
-        cloudTrips[tripName].push({
-          ...data,
-          firebaseId: firebaseDoc.id
-        });
+        if (!cloudTrips[tripName]) { cloudTrips[tripName] = []; }
+        cloudTrips[tripName].push({ ...data, firebaseId: firebaseDoc.id });
       });
-
       Object.keys(cloudTrips).forEach((trip) => {
-        cloudTrips[trip].sort(
-          (a, b) => new Date(b.date) - new Date(a.date)
-        );
+        cloudTrips[trip].sort((a, b) => new Date(b.date) - new Date(a.date));
       });
-
-      // Directly overwrite to clear out ghost data
       setTrips(cloudTrips);
     });
-
     return () => unsubscribe();
   }, []);
 
@@ -285,49 +261,36 @@ export default function App() {
   // =========================================================================
   // 💾 8. CORE ACTIONS (Create, Update, Delete)
   // =========================================================================
-  
-  // 🚀 SECRET MIGRATION FUNCTION
   const migrateOldDataToCloud = async () => {
     try {
       Alert.alert("Migration Started", "Please wait while we blast your old trips to the cloud...");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 
-      // 1. Look into the old, dormant v6 memory
       const v6Data = await AsyncStorage.getItem('@nexus_v6_pro');
-      if (!v6Data) {
-        Alert.alert("Notice", "No offline data found to migrate!");
-        return;
-      }
+      if (!v6Data) { return Alert.alert("Notice", "No offline data found to migrate!"); }
 
-      // 2. Unpack the old data
       const parsed = JSON.parse(v6Data);
       const oldTrips = parsed.trips || {};
       let migratedCount = 0;
 
-      // 3. Loop through every old trip and upload every expense to Firebase
       for (const tripName of Object.keys(oldTrips)) {
         const expenses = oldTrips[tripName];
         for (const exp of expenses) {
-          // Send it to the cloud!
-          await addDoc(collection(db, "trips"), {
-            ...exp,
-            tripName: tripName,
-            migratedAt: new Date().toISOString()
-          });
+          // Fire and forget (don't await) to make it lightning fast
+          addDoc(collection(db, "trips"), { ...exp, tripName: tripName, migratedAt: new Date().toISOString() });
           migratedCount++;
         }
       }
 
-      // 4. Success!
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("🎉 Migration Complete!", `Successfully rescued ${migratedCount} old expenses to the cloud! They will appear on your screen momentarily.`);
+      Alert.alert("🎉 Migration Complete!", `Successfully pushed ${migratedCount} expenses to the cloud!`);
       
     } catch (error) {
       console.error("Migration error:", error);
-      Alert.alert("Error", "Something went wrong during migration.");
+      Alert.alert("Migration Error", String(error.message || error));
     }
   };
-  
+
   const handleWalletSync = () => {
     const actualAmount = parseFloat(syncAmount);
     if (isNaN(actualAmount)) return Alert.alert('Error', 'Enter a valid amount');
@@ -347,19 +310,16 @@ export default function App() {
       currency_1: syncCurrency, method: 'Cash 💵', split: false, splitNames: ''
     };
     
-    // Save to Cloud immediately so sync isn't just local
-    addDoc(collection(db, "trips"), { ...exp, tripName: activeTrip, createdAt: new Date().toISOString() })
-      .then(docRef => {
-        exp.firebaseId = docRef.id;
-        const t = { ...trips, [activeTrip]: [exp, ...currentExpenses] };
-        setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings);
-        setSyncModalVisible(false); setSyncAmount('');
-        Alert.alert("Wallet Synced!", "Adjustment entry created.");
-      }).catch(e => console.log(e));
+    addDoc(collection(db, "trips"), { ...exp, tripName: activeTrip, createdAt: new Date().toISOString() }).catch(e => console.log(e));
+    
+    // OPTIMISTIC UI FIX: Instant update
+    const t = { ...trips, [activeTrip]: [exp, ...currentExpenses] };
+    setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings);
+    setSyncModalVisible(false); setSyncAmount('');
+    Alert.alert("Wallet Synced!", "Adjustment entry created.");
   };
 
-  // FIX 5: SAVE EXPENSE REFACTOR
-  const handleSaveExpense = async () => {
+  const handleSaveExpense = () => {
     if (!isDateSelected || !country || !city || !description || !category || !amount1 || !currency1 || !paymentMethod) {
       return Alert.alert('Error', 'Please fill out all fields before saving.');
     }
@@ -376,37 +336,26 @@ export default function App() {
       amount_1: parseFloat(amount1), currency_1: currency1, method: paymentMethod, split: isSplit, splitNames 
     };
 
-    try {
-      if (currentEditId && editingFirebaseId) {
-        await updateDoc(doc(db, "trips", editingFirebaseId), {
-          ...exp,
-          tripName: activeTrip,
-          updatedAt: new Date().toISOString()
-        });
-        exp.firebaseId = editingFirebaseId;
-      } else {
-        const docRef = await addDoc(collection(db, "trips"), {
-          ...exp,
-          tripName: activeTrip,
-          createdAt: new Date().toISOString()
-        });
-        exp.firebaseId = docRef.id;
-      }
-    } catch (error) {
-      console.error("Firebase Error:", error);
-    }
-
+    // OPTIMISTIC UI FIX: Update screen INSTANTLY
     let updated = currentEditId ? currentExpenses.map(i => i.id === currentEditId ? exp : i) : [exp, ...currentExpenses];
     updated.sort((a, b) => new Date(b.date) - new Date(a.date));
     const t = { ...trips, [activeTrip]: updated };
-    
     setTrips(t);
     saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings);
     resetForm(); 
+
+    // FIREBASE BACKGROUND SAVE (Unblocks the UI)
+    if (currentEditId && editingFirebaseId) {
+      updateDoc(doc(db, "trips", editingFirebaseId), { ...exp, tripName: activeTrip, updatedAt: new Date().toISOString() })
+      .catch(error => console.error("Firebase Update Error:", error));
+    } else {
+      addDoc(collection(db, "trips"), { ...exp, tripName: activeTrip, createdAt: new Date().toISOString() })
+      .catch(error => console.error("Firebase Add Error:", error));
+    }
   };
 
   const startEdit = (item) => {
-    setEditingId(item.id); setEditingFirebaseId(item.firebaseId || null); // Ensure tracking connects!
+    setEditingId(item.id); setEditingFirebaseId(item.firebaseId || null); 
     setDateObj(new Date(item.date)); setIsDateSelected(true);
     setTxType(item.type || 'Debit'); setCountry(item.country || ''); setCity(item.city || '');
     setDescription(item.description); setAmount1(item.amount_1.toString()); setCurrency1(item.currency_1); 
@@ -447,10 +396,8 @@ export default function App() {
     setModalVisible(false); resetForm(); 
   };
 
-  // FIX 8: FULL GHOST TRIP BUG FIX
   const confirmDeleteTrip = () => {
     if (!activeTrip) return;
-  
     Alert.alert("Delete Trip", `Delete "${activeTrip}" permanently?`, [
       { text: "Cancel", style: "cancel" },
       {
@@ -460,45 +407,39 @@ export default function App() {
             const q = query(collection(db, "trips"), where("tripName", "==", activeTrip));
             const snapshot = await getDocs(q);
             const promises = [];
-            snapshot.forEach((firebaseDoc) => {
-              promises.push(deleteDoc(doc(db, "trips", firebaseDoc.id)));
-            });
+            snapshot.forEach((firebaseDoc) => promises.push(deleteDoc(doc(db, "trips", firebaseDoc.id))));
             await Promise.all(promises);
-          } catch (e) {
-            console.log("Trip delete error:", e);
-          }
+          } catch (e) { console.log("Trip delete error:", e); }
   
           const newTrips = { ...trips }; delete newTrips[activeTrip];
           const newBudgets = { ...tripBudgets }; delete newBudgets[activeTrip];
           const newDays = { ...tripDays }; delete newDays[activeTrip];
   
-          setTrips(newTrips);
-          setTripBudgets(newBudgets);
-          setTripDays(newDays);
-          setActiveTrip("");
-  
+          setTrips(newTrips); setTripBudgets(newBudgets); setTripDays(newDays); setActiveTrip("");
           saveData(newTrips, "", masterCurrency, newBudgets, newDays, appSettings);
         }
       }
     ]);
   };
 
-  // FIX 7: DELETE EXPENSE REFACTOR
+  // FIX 4, 5, 6: UPFRONT HAPTIC & INSTANT OPTIMISTIC DELETE UI
   const confirmDeleteExpense = (item) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); // Haptic exactly on tap
     Alert.alert("Delete Expense", "Are you sure you want to delete this entry?", [
       { text: "Cancel", style: "cancel" }, 
-      { text: "Delete", style: "destructive", onPress: async () => { 
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-          try {
-            if (item.firebaseId) {
-              await deleteDoc(doc(db, "trips", item.firebaseId));
-            }
-          } catch (error) { console.error("❌ Firebase Delete Error: ", error); }
+      { text: "Delete", style: "destructive", onPress: () => { 
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           
+          // INSTANT UI UPDATE
           const u = currentExpenses.filter(e => e.id !== item.id); 
           const t = { ...trips, [activeTrip]: u }; 
           setTrips(t); saveData(t, activeTrip, masterCurrency, tripBudgets, tripDays, appSettings); 
           resetForm();
+
+          // FIREBASE BACKGROUND DELETE
+          if (item.firebaseId) {
+            deleteDoc(doc(db, "trips", item.firebaseId)).catch(e => console.error(e));
+          }
       }}
     ]);
   };
@@ -536,6 +477,7 @@ export default function App() {
     await Sharing.shareAsync(uri);
   };
 
+  // FIX 3: STRIPPED iOS UTI REQUIREMENT FOR ANDROID COMPATIBILITY
   const shareCSV = async () => {
     try {
       let csvString = "Date,City,Category,Description,Original Amount,Currency,Converted Amount,Type,Split Details\n";
@@ -549,7 +491,7 @@ export default function App() {
       });
       const fileUri = FileSystem.documentDirectory + `${activeTrip.replace(/\s+/g, '_')}_Report.csv`;
       await FileSystem.writeAsStringAsync(fileUri, csvString);
-      await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export CSV Report', UTI: 'public.comma-separated-values-text' });
+      await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export CSV Report' });
     } catch (error) { console.log("Share action dismissed: ", error); }
   };
 
@@ -699,7 +641,6 @@ export default function App() {
                     </View>
                     <View style={{alignItems: 'flex-end'}}>
                         <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text>
-                        {/* UPDATE: Passing the entire item rather than just the ID */}
                         <TouchableOpacity onPress={() => confirmDeleteExpense(item)}><Text style={{color:'red',fontSize:20, marginTop: 10}}>🗑️</Text></TouchableOpacity>
                     </View>
                   </TouchableOpacity>
@@ -855,10 +796,6 @@ export default function App() {
         <Text style={{fontWeight: '900', color: '#1e293b', fontSize: 15, marginTop: 2}}>Shitanshu Chokshi</Text>
       </View>
 
-      <View style={[styles.summaryCard, { padding: 0, overflow: 'hidden', height: 200, backgroundColor: '#f1f5f9' }]}>
-        <Image source={{ uri: 'https://raw.githubusercontent.com/Shitanshu1901/Travel-Expense-Tracker/main/App%20Infographic.png' }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
-      </View>
-
        <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>🌍 Smart Currency Engine</Text>
         <Text style={styles.featureListText}>• Real-Time Home Currency Switching</Text>
@@ -892,26 +829,6 @@ export default function App() {
         <Text style={styles.summaryTitle}>📤 Professional Reporting</Text>
         <Text style={styles.featureListText}>• One-Tap PDF Export with detailed documentation</Text>
         <Text style={styles.featureListText}>• Corporate CSV / Excel Export for raw accounting data</Text>
-      </View>
-
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>🚀 Premium Features </Text>
-        <Text style={styles.featureListText}>
-          <Text style={{fontWeight: 'bold'}}>• Shared Kitty Mode: </Text>
-          Transform your trip into a digital group envelope. Hide individual card/cash splits and focus purely on the group's remaining pool of money.
-        </Text>
-        <Text style={styles.featureListText}>
-           <Text style={{fontWeight: 'bold'}}>• The Pace-Maker: </Text>
-           Our smart engine monitors your daily spend. If you save money on Monday, it automatically rolls over your savings to increase your daily budget for Tuesday!
-        </Text>
-        <Text style={styles.featureListText}>
-           <Text style={{fontWeight: 'bold'}}>• Travel Badges: </Text>
-           Gamify your spending! The app secretly analyzes your habits to award you badges like 'Ultimate Foodie' and 'Cash King' in your Analytics tab.
-        </Text>
-        <Text style={styles.featureListText}>
-           <Text style={{fontWeight: 'bold'}}>• Trip Wrapped: </Text>
-           Relive your journey! Tap the purple button in Analytics to view an Instagram-style, shareable summary of your entire trip.
-        </Text>
       </View>
       <View style={{height: 120}} />
     </ScrollView>
@@ -1049,13 +966,11 @@ export default function App() {
               <Text style={{fontWeight: 'bold', color: '#1e293b'}}>Enable Wallet Auto-Sync</Text>
               <Switch value={appSettings.showSync} onValueChange={(val) => { const s = {...appSettings, showSync: val}; setAppSettings(s); saveData(trips, activeTrip, masterCurrency, tripBudgets, tripDays, s); }} />
             </View>
-        {/* 🚀 SECRET MIGRATION BUTTON */}
-            <TouchableOpacity style={{ backgroundColor: '#8b5cf6', padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 15, elevation: 2 }} 
-              onPress={migrateOldDataToCloud}>
-             <View>   
+            
+            <TouchableOpacity style={{ backgroundColor: '#8b5cf6', padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 15, elevation: 2 }} onPress={migrateOldDataToCloud}>
               <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>☁️ RESCUE V6 DATA TO CLOUD</Text>
-              </View> 
             </TouchableOpacity>
+
             <TouchableOpacity style={{ backgroundColor: '#f8fafc', padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 25, borderWidth: 1, borderColor: '#e2e8f0' }} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setSettingsModalVisible(false); setTimeout(() => setStashModalVisible(true), 300); }}>
               <View>
                 <Text style={{ fontWeight: 'bold', color: '#1e293b', fontSize: 16 }}>💱 Foreign Cash Stash</Text>
@@ -1088,11 +1003,11 @@ export default function App() {
         </View></View>
       </Modal>
 
-      {/* ADD/EDIT EXPENSE MODAL */}
+      {/* FIX 8 & 2: KEYBOARD AVOIDING VIEW & ADD/EDIT EXPENSE MODAL */}
       <Modal visible={expenseModalVisible} animationType="slide" transparent>
-        <View style={{flex:1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end'}}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end'}}>
           <View style={{backgroundColor: '#f8fafc', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, maxHeight: '90%'}}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <View style={[styles.rowBetween, {marginBottom: 15}]}>
                 <Text style={{fontSize: 18, fontWeight: 'bold'}}>{editingId ? 'Edit Entry' : 'New Expense'}</Text>
                 <TouchableOpacity onPress={() => setExpenseModalVisible(false)}><Text style={{fontSize: 24, color: 'red'}}>×</Text></TouchableOpacity>
@@ -1147,10 +1062,10 @@ export default function App() {
               <TouchableOpacity style={[styles.submitBtn, {marginBottom: 40}]} onPress={handleSaveExpense}><Text style={styles.btnText}>{editingId ? 'UPDATE ENTRY' : '+ SAVE EXPENSE'}</Text></TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
-      {/* FOREIGN CASH STASH MODAL */}
+      {/* FIX 7: FOREIGN CASH STASH DROPDOWN UPGRADE */}
       <Modal visible={stashModalVisible} animationType="slide" transparent={true}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
           <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, maxHeight: '80%' }}>
@@ -1158,7 +1073,7 @@ export default function App() {
               <Text style={{ fontSize: 22, fontWeight: '900', color: '#1e293b' }}>🌍 Foreign Cash Stash</Text>
               <TouchableOpacity onPress={() => setStashModalVisible(false)}><Text style={{ fontSize: 24, color: '#94a3b8' }}>✕</Text></TouchableOpacity>
             </View>
-            <Text style={{ color: '#64748b', marginBottom: 20, lineHeight: 20 }}>Empty your physical pockets. Enter the random currencies you have left, and see exactly what it's all worth in {masterCurrency}.</Text>
+            <Text style={{ color: '#64748b', marginBottom: 20, lineHeight: 20 }}>Empty your physical pockets. Enter the currencies you have left, and see exactly what it's all worth in {masterCurrency}.</Text>
             
             <View style={{ backgroundColor: '#eef2ff', padding: 20, borderRadius: 20, alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#c7d2fe' }}>
               <Text style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: 12, letterSpacing: 1, marginBottom: 5 }}>TOTAL COMBINED VALUE</Text>
@@ -1167,12 +1082,24 @@ export default function App() {
 
             <ScrollView style={{ maxHeight: 250, marginBottom: 20 }}>
               {stashItems.map((item) => (
-                <View key={item.id} style={{ flexDirection: 'row', gap: 10, marginBottom: 15 }}>
-                  <TextInput style={{ flex: 1, backgroundColor: '#f1f5f9', padding: 15, borderRadius: 15, fontSize: 16, fontWeight: 'bold', textAlign: 'center' }} placeholder="e.g. THB" value={item.currency} onChangeText={(text) => updateStashItem(item.id, 'currency', text)} autoCapitalize="characters" maxLength={3} />
-                  <TextInput style={{ flex: 2, backgroundColor: '#f1f5f9', padding: 15, borderRadius: 15, fontSize: 16 }} placeholder="Amount (e.g. 1500)" keyboardType="numeric" value={item.amount} onChangeText={(text) => updateStashItem(item.id, 'amount', text)} />
+                <View key={item.id} style={{ marginBottom: 15, backgroundColor: '#f8fafc', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <View style={{ flex: 1, backgroundColor: '#f1f5f9', borderRadius: 15, height: 50, justifyContent: 'center' }}>
+                      <Picker selectedValue={item.currency} onValueChange={(text) => updateStashItem(item.id, 'currency', text)}>
+                        <Picker.Item label="Currency" value="" />
+                        {CURRENCIES.map(c => <Picker.Item key={c.value} label={c.value} value={c.value} />)}
+                      </Picker>
+                    </View>
+                    <TextInput style={{ flex: 1, backgroundColor: '#f1f5f9', padding: 15, borderRadius: 15, fontSize: 16 }} placeholder="Amount" keyboardType="numeric" value={item.amount} onChangeText={(text) => updateStashItem(item.id, 'amount', text)} />
+                  </View>
+                  {item.currency ? (
+                    <Text style={{fontSize: 11, color: '#64748b', marginTop: 8, fontWeight: 'bold'}}>
+                      Rate: 1 {item.currency} = {rates[item.currency] ? (1 / rates[item.currency]).toFixed(4) : "1.00"} {masterCurrency}
+                    </Text>
+                  ) : null}
                 </View>
               ))}
-              <TouchableOpacity onPress={addStashRow} style={{ padding: 15, alignItems: 'center', borderStyle: 'dashed', borderWidth: 2, borderColor: '#cbd5e1', borderRadius: 15, marginTop: 10 }}>
+              <TouchableOpacity onPress={addStashRow} style={{ padding: 15, alignItems: 'center', borderStyle: 'dashed', borderWidth: 2, borderColor: '#cbd5e1', borderRadius: 15, marginTop: 5 }}>
                 <Text style={{ color: '#64748b', fontWeight: 'bold' }}>+ Add Another Currency</Text>
               </TouchableOpacity>
             </ScrollView>
