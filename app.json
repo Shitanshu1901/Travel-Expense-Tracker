@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.shitanshu.expensenexus",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#ffffff"
