@@ -8,7 +8,10 @@ import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+// FIX: expo-file-system v19 (SDK 54) removed the old documentDirectory/writeAsStringAsync
+// API from the default import - calling it now throws "is deprecated...will throw in runtime".
+// The legacy subpath keeps the old API working without rewriting the export logic.
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import * as LocalAuthentication from 'expo-local-authentication';
 
@@ -492,7 +495,16 @@ export default function App() {
       const fileUri = FileSystem.documentDirectory + `${activeTrip.replace(/\s+/g, '_')}_Report.csv`;
       await FileSystem.writeAsStringAsync(fileUri, csvString);
       await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export CSV Report' });
-    } catch (error) { console.log("Share action dismissed: ", error); }
+    } catch (error) {
+      console.log("CSV export failed: ", error);
+      // Only the share-sheet being available check should fail silently; real
+      // write/share failures should be visible, otherwise it just looks broken.
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert("Sharing Unavailable", "Sharing isn't available on this device.");
+      } else {
+        Alert.alert("Export Failed", "Couldn't export the CSV file. Please try again.");
+      }
+    }
   };
 
   const sendWhatsApp = (name, amount) => {
@@ -508,9 +520,39 @@ export default function App() {
     else { setShowWrapped(false); setWrappedStep(0); }
   };
 
+  // FIX: extracted so FlatList only renders visible rows instead of every
+  // expense at once (previously this logic ran for ALL items on every render
+  // via ScrollView + .map(), which is what caused the lag on bigger trips).
+  const renderExpenseItem = useCallback(({ item }) => {
+    const conv = getConvertedAmount(item.amount_1, item.currency_1);
+    const rate = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(4) : "1.00";
+    const sf = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
+    return (
+      <TouchableOpacity style={styles.card} onPress={() => startEdit(item)}>
+        <View style={{flex: 1}}>
+            <Text style={styles.cardDate}>{item.date} • {item.city}</Text>
+            <Text style={styles.cardDesc}>{item.description}</Text>
+            <Text style={styles.cardCategory}>Category: {item.category}</Text>
+            <Text style={styles.cardOrigAmt}>Original: {formatValue(item.amount_1)} {item.currency_1}</Text>
+            <Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text>
+            {item.split && <Text style={styles.splitSubText}>👥 Share: {getSymbol(masterCurrency)}{formatValue(conv/sf)} per person</Text>}
+        </View>
+        <View style={{alignItems: 'flex-end'}}>
+            <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text>
+            <TouchableOpacity onPress={() => confirmDeleteExpense(item)}><Text style={{color:'red',fontSize:20, marginTop: 10}}>🗑️</Text></TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [getConvertedAmount, rates, masterCurrency, startEdit, confirmDeleteExpense]);
+
   const renderHome = () => (
     <View style={{flex: 1}}>
-      <ScrollView ref={scrollRef} stickyHeaderIndices={[0]}>
+      <FlatList
+        ref={scrollRef}
+        data={currentExpenses}
+        keyExtractor={(item) => item.id}
+        renderItem={renderExpenseItem}
+        ListHeaderComponent={
         <View style={styles.header}>
           <View style={styles.rowBetween}>
             <View style={{width: 24}} /> 
@@ -625,35 +667,20 @@ export default function App() {
               ) : null}
 
               <View style={{height: 15}} />
-              {currentExpenses.map(item => {
-                const conv = getConvertedAmount(item.amount_1, item.currency_1);
-                const rate = rates[item.currency_1] ? (1 / rates[item.currency_1]).toFixed(4) : "1.00";
-                const sf = item.split && item.splitNames ? item.splitNames.split(',').length + 1 : 1;
-                return (
-                  <TouchableOpacity key={item.id} style={styles.card} onPress={() => startEdit(item)}>
-                    <View style={{flex: 1}}>
-                        <Text style={styles.cardDate}>{item.date} • {item.city}</Text>
-                        <Text style={styles.cardDesc}>{item.description}</Text>
-                        <Text style={styles.cardCategory}>Category: {item.category}</Text>
-                        <Text style={styles.cardOrigAmt}>Original: {formatValue(item.amount_1)} {item.currency_1}</Text>
-                        <Text style={styles.rateText}>Rate: 1 {item.currency_1} = {rate} {masterCurrency}</Text>
-                        {item.split && <Text style={styles.splitSubText}>👥 Share: {getSymbol(masterCurrency)}{formatValue(conv/sf)} per person</Text>}
-                    </View>
-                    <View style={{alignItems: 'flex-end'}}>
-                        <Text style={[styles.cardAmt, {color: item.type === 'Credit' ? '#22c55e' : '#ef4444'}]}>{getSymbol(masterCurrency)}{formatValue(conv)}</Text>
-                        <TouchableOpacity onPress={() => confirmDeleteExpense(item)}><Text style={{color:'red',fontSize:20, marginTop: 10}}>🗑️</Text></TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-              
+            </View>
+          )}
+        </View>
+        }
+        ListFooterComponent={
+          activeTrip !== "" ? (
+            <View>
               <TouchableOpacity style={styles.exportBtn} onPress={sharePDF}><Text style={styles.btnText}>📤 EXPORT PDF REPORT</Text></TouchableOpacity>
               <TouchableOpacity style={[styles.exportBtn, {backgroundColor: '#10b981', marginTop: 10}]} onPress={shareCSV}><Text style={styles.btnText}>📊 EXPORT EXCEL (CSV)</Text></TouchableOpacity>
               <View style={{height: 150}} />
             </View>
-          )}
-        </View>
-      </ScrollView>
+          ) : null
+        }
+      />
 
       {activeTrip !== "" && (
         <TouchableOpacity style={styles.fab} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); resetForm(); setExpenseModalVisible(true); }}>
